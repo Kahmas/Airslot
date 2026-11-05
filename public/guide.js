@@ -27,6 +27,15 @@ export function viewGuide(view, sub, { h, appState, toast }) {
     h('code', {}, text),
     h('button', { class: 'btn btn-secondary btn-small', type: 'button', 'aria-label': `Copy ${label}`, onclick: (event) => copyText(text, event.currentTarget, toast) }, 'Copy'));
 
+  // For pages that depend on who is logged in. Open uses this browser profile, and Copy lets people pick another one.
+  const pageRow = (url, label) => h('div', { class: 'copy-row' },
+    h('code', {}, url),
+    h('span', { class: 'copy-actions' },
+      h('a', { class: 'btn btn-secondary btn-small', href: url, target: '_blank', rel: 'noopener', 'aria-label': `Open ${label}` }, 'Open'),
+      h('button', { class: 'btn btn-secondary btn-small', type: 'button', 'aria-label': `Copy the address of ${label}`, onclick: (event) => copyText(url, event.currentTarget, toast) }, 'Copy')));
+
+  const profileNote = () => note(b('Using several browser profiles? '), 'For an address with Open and Copy, copy it into the profile where the right account is logged in. Open uses the profile you are in now.');
+
   const steps = (...items) => h('ol', { class: 'steps' }, items.map((item) => h('li', {}, item)));
   const bullets = (...items) => h('ul', { class: 'guide-list' }, items.map((item) => h('li', {}, item)));
   const note = (...children) => h('p', { class: 'guide-note' }, children);
@@ -107,6 +116,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
     return guidePage([
       statusLine(['facebook', 'instagram'], appState.connect.meta),
       note("You only do this once. One Meta sign-in connects your Facebook Page and its linked Instagram account together. Menu names on Meta's sites change from time to time, so yours may differ slightly."),
+      profileNote(),
       beforeYouStart(
         h('p', { class: 'part-intro' }, 'Meta only lets apps post to a Facebook Page and to a professional Instagram account linked to that Page. Most trouble comes from one of these not being ready, so this guide checks each one first.'),
         h('dl', { class: 'keys' },
@@ -124,14 +134,14 @@ export function viewGuide(view, sub, { h, appState, toast }) {
         intro: 'The Facebook account you use must run the Page itself.',
         body: [
           steps(
-            ['Log in to Facebook with the account you will keep using, then open ', link('your Pages', 'https://www.facebook.com/pages/?category=your_pages'), '.'],
+            ['Log in to Facebook with the account you will keep using, then open your Pages:', pageRow('https://www.facebook.com/pages/?category=your_pages', 'your Pages')],
             'Find your situation below.',
           ),
           sub3('Your Page is listed'),
           note('Nothing to do. Go to Part 2.'),
           sub3('The list is empty, and you have no Page yet'),
           steps(
-            ['Open ', link('the Create a Page screen', 'https://www.facebook.com/pages/create'), '.'],
+            ['Open the Create a Page screen:', pageRow('https://www.facebook.com/pages/create', 'the Create a Page screen')],
             ['Type a ', b('Page name'), ' and pick a ', b('Category'), ', then click ', b('Create Page'), '.'],
             'The remaining questions can be skipped. You can fill them in later.',
           ),
@@ -142,7 +152,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
             ['They type your Facebook name, turn on ', b('Full control'), ', and confirm.'],
             'Accept the invitation from your Facebook notifications.',
           ),
-          see('your Page in the list at ', link('your Pages', 'https://www.facebook.com/pages/?category=your_pages'), ' before you go on.'),
+          see('your Page in the list of your Pages before you go on.'),
         ],
       },
       {
@@ -190,8 +200,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
         intro: "Meta only lets people with a role on Airslot's Meta app sign in until the app has passed Meta's review. Ask your admin whether this has happened. If it has, skip this part.",
         body: steps(
           'Send your admin the name of your Facebook account, and ask them to add you as a tester.',
-          ['Once they have, open ', link('developers.facebook.com/requests', 'https://developers.facebook.com/requests'), ' while logged in to that Facebook account.'],
-          ['Register if it asks you to, then click ', b('Accept'), ' on the Airslot request.'],
+          ['Log in to Facebook with that account, open ', b('Settings & privacy'), ', ', b('Your activity'), ', ', b('Apps and Websites'), ', then ', b('Requests'), ', and click ', b('Accept'), '. Menu names change from time to time.'],
         ),
       },
       {
@@ -237,14 +246,15 @@ export function viewGuide(view, sub, { h, appState, toast }) {
           steps(
             'Make sure the other Facebook login runs a Page, with a professional Instagram account linked to it. Parts 1 to 3 cover this.',
             [isAdmin
-              ? ['Add that Facebook login as a tester on the Meta app, as the Setup: Meta guide shows. It must accept the request at ', link('developers.facebook.com/requests', 'https://developers.facebook.com/requests'), '.']
-              : ['Ask your admin to add that Facebook login as a tester, then accept the request at ', link('developers.facebook.com/requests', 'https://developers.facebook.com/requests'), '. Skip this if Airslot has passed Meta\'s review.']],
-            ['Log out of your first account on ', link('Facebook', 'https://www.facebook.com'), ' in this browser. Meta connects whichever account is logged in.',
-              dont('skip this. If you stay logged in, Meta only asks about your first account again.')],
-            ['Open the ', h('a', { href: '#/accounts' }, 'Accounts page'), ', click ', b('Add another account'), ', and log in with the other Facebook login.'],
+              ? 'Add that Facebook login as a tester on the Meta app, as the Setup: Meta guide shows, and accept the invitation from that login.'
+              : 'Ask your admin to add that Facebook login as a tester, then accept the invitation from that login, as Part 4 shows. Skip this if Airslot has passed Meta\'s review.'],
+            ['On the ', h('a', { href: '#/accounts' }, 'Accounts page'), ', under Facebook and Instagram, click ', b('Use another browser profile'), '. The link is copied for you.'],
+            'Paste it into the browser profile where the other Facebook login is logged in.',
+            ['Check the Airslot username on the page that opens, and click ', b('Continue'), '.', dont('continue if the link came from someone else. Whoever holds that username could post to your account.')],
             ['Choose ', b('Opt in to current Pages only'), ' and ', b('Opt in to current Instagram accounts only'), ', tick the accounts, and click ', b('Save'), '.'],
           ),
-          see('the new Page and Instagram account listed on the Accounts page, along with your first ones.'),
+          see('a page saying Connected in that profile. The Accounts page in your first profile updates by itself, and your first accounts stay connected.'),
+          note(b('Only one browser profile? '), 'Log out of Facebook there, then click ', b('Add another account'), ' and log in with the other Facebook login. Meta connects whichever account is logged in.'),
           note(b('When scheduling: '), 'every connected account starts switched on in New post, so turn off the ones this video is not for.'),
         ],
       },
@@ -255,6 +265,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
     return guidePage([
       statusLine(['youtube'], appState.connect.google),
       note("You only do this once. Menu names on Google's sites change from time to time, so yours may differ slightly."),
+      profileNote(),
       beforeYouStart(
         h('p', { class: 'part-intro' }, 'Airslot posts to one YouTube channel for each sign-in. A vertical or square video up to 3 minutes becomes a Short on its own.'),
         sub3('Have this ready'),
@@ -265,7 +276,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
         intro: 'A Google account does not have a channel until you make one, and Airslot needs a channel to post to.',
         body: [
           steps(
-            ['Open ', link('YouTube', 'https://www.youtube.com'), ' and log in with the Google account you will use.'],
+            ['Open YouTube and log in with the Google account you will use:', pageRow('https://www.youtube.com', 'YouTube')],
             'Click your profile picture at the top right.',
             ['If the menu shows ', b('View your channel'), ', you already have one. Go to Part 2.'],
             ['If it shows ', b('Create a channel'), ', click it, fill in the name and handle, then click ', b('Create channel'), '.'],
@@ -297,7 +308,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
             ['Open ', h('a', { href: '#/new' }, 'New post'), ', add a vertical video, and set the publish time at least 20 minutes ahead.'],
             'Turn on your YouTube channel and check the title, which comes from the first line of the caption.',
             'Schedule it.',
-            ['Open ', link('YouTube Studio', 'https://studio.youtube.com'), ', then ', b('Content'), '.'],
+            ['Open YouTube Studio, then ', b('Content'), ':', pageRow('https://studio.youtube.com', 'YouTube Studio')],
           ),
           see('the video listed as private with your publish date. YouTube makes it public at that time, and the Schedule page then shows ', b('Published'), '.'),
         ],
@@ -309,11 +320,12 @@ export function viewGuide(view, sub, { h, appState, toast }) {
           limitNote(),
           steps(
             'Make sure the other Google account has its own channel. Part 1 covers this.',
-            ['Open the ', h('a', { href: '#/accounts' }, 'Accounts page'), ' and click ', b('Add another channel'), '.'],
-            ['Google asks which account to use. Choose the other one, or click ', b('Use another account'), ' if it is not listed.'],
+            ['If both Google accounts are logged in to this browser profile, click ', b('Add another channel'), ' on the ', h('a', { href: '#/accounts' }, 'Accounts page'), ' and choose the other one.'],
+            ['If it is in another browser profile, click ', b('Use another browser profile'), ' instead. The link is copied for you. Paste it there, check the Airslot username, and click ', b('Continue'), '.',
+              dont('continue if the link came from someone else. Whoever holds that username could post to your channel.')],
             'Go through the same screens as in Part 2.',
           ),
-          see('the new channel listed on the Accounts page, along with your first one.'),
+          see('the new channel on the Accounts page, along with your first one.'),
           note(b('When scheduling: '), 'every connected account starts switched on in New post, so turn off the ones this video is not for.'),
         ],
       },
@@ -334,7 +346,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
         title: 'Register as a Meta developer',
         intro: 'Skip this part if you already see your apps on the Meta for Developers site.',
         body: steps(
-          ['Open ', link('Meta for Developers', 'https://developers.facebook.com/apps'), ' while logged in to the Facebook account that runs your Page.'],
+          ['Open Meta for Developers while logged in to the Facebook account that runs your Page:', pageRow('https://developers.facebook.com/apps', 'Meta for Developers')],
           ['Click ', b('Get Started'), ' at the top right, then ', b('Register'), ', and accept the terms.'],
           'Verify your phone number and email if asked.',
           ['If it asks about your role, choose ', b('Developer'), '. The choice does not change what you can do.'],
@@ -398,9 +410,11 @@ export function viewGuide(view, sub, { h, appState, toast }) {
           steps(
             ['Open ', b('App roles'), ', then ', b('Roles'), ', in the left menu of the Meta app.'],
             ['Click ', b('Add People'), ', choose ', b('Testers'), ', and enter the person\'s Facebook account.'],
-            ['They accept the request at ', link('developers.facebook.com/requests', 'https://developers.facebook.com/requests'), '.'],
+            ['They accept it on Facebook, under ', b('Settings & privacy'), ', ', b('Your activity'), ', ', b('Apps and Websites'), ', then ', b('Requests'), '. They do not need a developer account.'],
           ),
-          note(b('To let anyone connect without a role, '), 'Meta requires App Review for the five permissions above and Business Verification, and then the app can switch to Live.'),
+          note(b('Who can be a tester: '), 'Meta allows your employees, or people who agreed to test on your behalf. Most apps can have up to 50 testers.'),
+        note(b('Posts stay private to people with a role while the app is in Development. '), 'Meta says test posts can only be seen by role users, so check a post from a logged-out browser. If other people cannot see it, the app has to switch to Live.'),
+        note(b('To let anyone connect without a role, '), 'Meta requires App Review for the five permissions above and Business Verification, and then the app can switch to Live.'),
         ],
       },
     ]);
@@ -421,10 +435,10 @@ export function viewGuide(view, sub, { h, appState, toast }) {
         title: 'Create a Google Cloud project',
         intro: 'This is free, and it is what lets Airslot talk to YouTube.',
         body: steps(
-          ['Open ', link('Google Cloud Console', 'https://console.cloud.google.com'), ' and log in.'],
+          ['Open Google Cloud Console and log in:', pageRow('https://console.cloud.google.com', 'Google Cloud Console')],
           ['Click the project picker at the top, then ', b('New project'), '. Name it ', b('Airslot'), ' and click ', b('Create'), '.'],
           'Open the project picker again and select Airslot. Check its name stays at the top of the page in the following steps.',
-          ['Open the ', link('YouTube Data API v3 page', 'https://console.cloud.google.com/apis/library/youtube.googleapis.com'), ' and click ', b('Enable'), '.'],
+          ['Open the YouTube Data API v3 page and click ', b('Enable'), ':', pageRow('https://console.cloud.google.com/apis/library/youtube.googleapis.com', 'the YouTube Data API v3 page')],
         ),
       },
       {
@@ -516,7 +530,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
       note('Find the message you see. Most problems happen once, while connecting an account.'),
       h('section', { class: 'card part' },
         h('h2', { class: 'card-title' }, 'Connecting Facebook and Instagram'),
-        fix('App not active, or the app isn\'t available to you', 'Meta only lets people with a role on the app sign in until the app has passed its review.', isAdmin ? 'Add the person as a tester. See the last part of the Setup: Meta guide.' : 'Ask your admin to add you as a tester, then accept the request at developers.facebook.com/requests.'),
+        fix('App not active, or the app isn\'t available to you', 'Meta only lets people with a role on the app sign in until the app has passed its review.', isAdmin ? 'Add the person as a tester. See the last part of the Setup: Meta guide.' : 'Ask your admin to add you as a tester, then accept on Facebook under Settings & privacy, Your activity, Apps and Websites, Requests.'),
         fix("You don't have any Pages", 'This Facebook account does not run a Page.', 'Create a Page, or ask whoever runs it to give you Full control. See Part 1 of the Facebook & Instagram guide.'),
         fix("You don't have any Instagram accounts, or Create Instagram account", 'The account is still personal, or is not linked to your Page.', "Don't create a new account. Follow Parts 2 and 3 of the Facebook & Instagram guide, then connect again."),
         fix('Meta returned no Facebook Page for this account', 'No Page was chosen during sign-in. This happens when "Opt in to all current and future Pages" was chosen on an account with no Page.', 'Connect again, click Edit previous settings if it appears, and choose Opt in to current Pages only. Your Page must be listed and ticked.'),

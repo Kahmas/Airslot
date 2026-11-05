@@ -14,6 +14,7 @@ const PLATFORMS = {
 const POLL_MS = 10_000;
 const IG_CAPTION_LIMIT = 2200;
 const CHUNK_RETRIES = 5;
+const LINK_MINUTES = 15;
 
 const ICONS = {
   moon: '<svg aria-hidden="true" viewBox="0 0 18 18" width="18" height="18"><path fill="currentColor" d="M15.2 11.4A6.9 6.9 0 0 1 6.6 2.8a.6.6 0 0 0-.8-.7 7.9 7.9 0 1 0 10.1 10.1.6.6 0 0 0-.7-.8Z"/></svg>',
@@ -998,8 +999,56 @@ function accountsSummary() {
   return accountsAreFull() ? `${used} To add another, disconnect one or ask your admin for more.` : `Where your videos can go. ${used}`;
 }
 
-function renderAccountGroup({ title, note, platforms, configured, startUrl, connectLabel, addLabel, guide }) {
+let accountsWatch = null;
+
+function stopAccountsWatch() {
+  clearInterval(accountsWatch);
+  accountsWatch = null;
+}
+
+// The account arrives from another browser profile, so this page has no other way of hearing about it.
+function watchForNewAccounts() {
+  stopAccountsWatch();
+  const until = Date.now() + LINK_MINUTES * 60_000;
+  accountsWatch = setInterval(async () => {
+    if (Date.now() > until) {
+      stopAccountsWatch();
+      return;
+    }
+    const before = JSON.stringify(appState.accounts);
+    await loadState().catch(() => {});
+    if (JSON.stringify(appState.accounts) !== before && location.hash.startsWith('#/accounts')) viewAccounts();
+  }, 5000);
+}
+
+function renderLinkOption(provider) {
+  const panel = h('div', { class: 'connect-link', hidden: true });
+  const button = h('button', {
+    class: 'btn btn-secondary',
+    type: 'button',
+    onclick: async () => {
+      try {
+        const { url } = await api('/api/connect-links', { method: 'POST', body: { provider } });
+        const copy = h('button', { class: 'btn btn-secondary btn-small', type: 'button', onclick: () => copyText(url, copy, toast) }, 'Copy');
+        panel.replaceChildren(
+          h('div', { class: 'copy-row' }, h('code', {}, url), copy),
+          h('p', { class: 'field-hint' }, `Paste this into the browser profile where that account is logged in. It works once, for ${LINK_MINUTES} minutes, and this page updates when it is done. Don't send it to anyone else.`),
+        );
+        panel.hidden = false;
+        copyText(url, copy, toast);
+        watchForNewAccounts();
+      } catch (err) {
+        toast(err.message);
+      }
+    },
+  }, 'Use another browser profile');
+  return { button, panel };
+}
+
+function renderAccountGroup({ title, note, platforms, configured, provider, startUrl, connectLabel, addLabel, guide }) {
   const accounts = appState.accounts.filter((account) => platforms.includes(account.platform));
+  const canConnect = !appState.demo && !accountsAreFull() && configured;
+  const linkOption = canConnect ? renderLinkOption(provider) : null;
   let action;
   if (appState.demo) {
     action = h('p', { class: 'field-hint' }, 'Connecting real accounts is turned off in demo mode. Run npm start to use your own.');
@@ -1019,7 +1068,9 @@ function renderAccountGroup({ title, note, platforms, configured, startUrl, conn
       : h('p', { class: 'account-note' }, note),
     h('div', { class: 'account-connect' },
       action,
-      h('a', { class: 'btn btn-secondary', href: guide }, 'How to connect')));
+      linkOption?.button,
+      h('a', { class: 'btn btn-secondary', href: guide }, 'How to connect'),
+      linkOption?.panel));
 }
 
 function viewAccounts() {
@@ -1031,6 +1082,7 @@ function viewAccounts() {
         note: 'Nothing connected yet. One Meta sign-in brings in every Facebook Page and its linked Instagram account.',
         platforms: ['facebook', 'instagram'],
         configured: appState.connect.meta,
+        provider: 'meta',
         startUrl: '/auth/meta/start',
         connectLabel: 'Connect with Meta',
         addLabel: 'Add another account',
@@ -1041,12 +1093,14 @@ function viewAccounts() {
         note: 'No channel connected yet.',
         platforms: ['youtube'],
         configured: appState.connect.google,
+        provider: 'google',
         startUrl: '/auth/google/start',
         connectLabel: 'Connect a YouTube channel',
         addLabel: 'Add another channel',
         guide: '#/guide/youtube',
       })),
   );
+  return stopAccountsWatch;
 }
 
 /* ---------- Shell ---------- */

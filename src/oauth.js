@@ -1,12 +1,17 @@
 import { randomBytes } from 'node:crypto';
+import express from 'express';
+import { HttpError } from './http-error.js';
 import { accountLimitFor } from './limits.js';
 import { call, createGraph } from './platforms/http.js';
+import { escapeHtml } from './site.js';
 
 const STATE_TTL_MS = 10 * 60_000;
+const LINK_TTL_MS = 15 * 60_000;
 // One scope covers upload, reading status and deleting a scheduled video.
 const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
 const META_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish';
 const PAGE_FIELDS = 'id,name,access_token,instagram_business_account{id,username}';
+const PROVIDER_NAMES = { meta: 'Facebook and Instagram', google: 'YouTube' };
 
 // /me/accounts leaves out Pages a person reaches through a business portfolio, so when it comes back
 // empty, the Page IDs recorded on the grant itself are the remaining way to find what was approved.
@@ -35,26 +40,62 @@ async function grantedPages(meta, graph, userToken) {
   return pages;
 }
 
-export function registerOAuth(app, { config, store, setFlash }) {
+export function registerOAuth(app, { config, store, setFlash, stylesheet, now = Date.now }) {
   const states = new Map();
+  const links = new Map();
 
   // A state only works for the person it was issued to, so nobody can attach their account to someone else.
-  function issueState(provider, userId) {
+  // fromLink marks a sign-in started from a copied link, where the browser has no Airslot login of its own.
+  function issueState(provider, userId, fromLink = false) {
     for (const [key, entry] of states) {
       if (entry.expires <= Date.now()) states.delete(key);
     }
     const state = randomBytes(24).toString('hex');
-    states.set(state, { provider, userId, expires: Date.now() + STATE_TTL_MS });
+    states.set(state, { provider, userId, fromLink, expires: Date.now() + STATE_TTL_MS });
     return state;
   }
 
-  function consumeState(state, provider, userId) {
+  function takeState(state, provider) {
     const entry = states.get(state);
     states.delete(state);
-    return Boolean(entry && entry.provider === provider && entry.userId === userId && entry.expires > Date.now());
+    return entry && entry.provider === provider && entry.expires > Date.now() ? entry : null;
   }
 
   const redirectUri = (provider) => `${config.baseUrl}/auth/${provider}/callback`;
+
+  function metaDialogUrl(state) {
+    const { meta } = config;
+    const params = new URLSearchParams({
+      client_id: meta.appId,
+      redirect_uri: redirectUri('meta'),
+      response_type: 'code',
+      state,
+    });
+    if (meta.configId) params.set('config_id', meta.configId);
+    else params.set('scope', META_SCOPES);
+    return `${meta.dialogUrl}/${meta.version}/dialog/oauth?${params}`;
+  }
+
+  function googleDialogUrl(state) {
+    const { google } = config;
+    const params = new URLSearchParams({
+      client_id: google.clientId,
+      redirect_uri: redirectUri('google'),
+      response_type: 'code',
+      scope: YOUTUBE_SCOPE,
+      access_type: 'offline',
+      // select_account always offers a choice, so a second Google account can be added.
+      prompt: 'select_account consent',
+      state,
+    });
+    return `${google.authUrl}?${params}`;
+  }
+
+  const providerReady = {
+    meta: () => Boolean(config.meta.appId && config.meta.appSecret),
+    google: () => Boolean(config.google.clientId && config.google.clientSecret),
+  };
+  const dialogUrl = { meta: metaDialogUrl, google: googleDialogUrl };
 
   function signedIn(req, res, next) {
     if (req.user) return next();
@@ -64,6 +105,55 @@ export function registerOAuth(app, { config, store, setFlash }) {
   function finish(req, res, flash) {
     setFlash(req.user.id, flash);
     res.redirect('/#/accounts');
+  }
+
+  function linkPage(res, status, title, body) {
+    res.status(status).set('Cache-Control', 'no-store').type('html').send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>${title} | Airslot</title>
+  <link rel="stylesheet" href="${stylesheet}">
+</head>
+<body>
+  <main class="connect-page">
+    <p class="wordmark">Airslot</p>
+    <div class="card auth-card">
+      <h1 class="auth-title">${title}</h1>
+      ${body}
+    </div>
+  </main>
+</body>
+</html>`);
+  }
+
+  // Who a sign-in belongs to, and where it ends. A copied link settled that on its confirmation page,
+  // so it needs no login here. Any other sign-in has to come back to the person who started it.
+  function callbackContext(req, res, provider) {
+    const entry = takeState(req.query.state, provider);
+    if (entry?.fromLink) {
+      const user = store.getUser(entry.userId);
+      if (!user || user.disabled) {
+        linkPage(res, 410, 'This link no longer works', '<p class="auth-note">The Airslot login it belongs to is turned off.</p>');
+        return null;
+      }
+      return {
+        user,
+        valid: true,
+        finish: (flash) => {
+          setFlash(user.id, flash);
+          const title = flash.level === 'error' ? 'Not connected' : 'Connected';
+          linkPage(res, 200, title, `<p class="auth-note">${escapeHtml(flash.text)}</p><p class="auth-note">You can close this window and go back to Airslot.</p>`);
+        },
+      };
+    }
+    if (!req.user) {
+      res.redirect('/#/login');
+      return null;
+    }
+    return { user: req.user, valid: entry?.userId === req.user.id, finish: (flash) => finish(req, res, flash) };
   }
 
   // Connecting again only refreshes an account's access, so it never counts against the limit.
@@ -88,24 +178,62 @@ export function registerOAuth(app, { config, store, setFlash }) {
     return { connected, note };
   }
 
-  app.get('/auth/meta/start', signedIn, (req, res) => {
-    const { meta } = config;
-    if (!meta.appId || !meta.appSecret) return finish(req, res, { level: 'error', text: "Meta isn't set up on this server yet." });
-    const params = new URLSearchParams({
-      client_id: meta.appId,
-      redirect_uri: redirectUri('meta'),
-      response_type: 'code',
-      state: issueState('meta', req.user.id),
-    });
-    if (meta.configId) params.set('config_id', meta.configId);
-    else params.set('scope', META_SCOPES);
-    res.redirect(`${meta.dialogUrl}/${meta.version}/dialog/oauth?${params}`);
+  // A link can be pasted into a browser profile where the other Facebook or Google account is logged in.
+  // It is one-use and short-lived, because whoever signs in through it attaches their account to this person.
+  app.post('/api/connect-links', express.json({ limit: '1kb' }), (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Please log in.' });
+    const provider = req.body?.provider;
+    if (!Object.hasOwn(providerReady, provider)) throw new HttpError(422, 'That platform is not valid.');
+    if (!providerReady[provider]()) throw new HttpError(422, "That platform isn't set up on this server yet.");
+
+    for (const [key, link] of links) {
+      if (link.expires <= now() || (link.userId === req.user.id && link.provider === provider)) links.delete(key);
+    }
+    const token = randomBytes(32).toString('base64url');
+    const expires = now() + LINK_TTL_MS;
+    links.set(token, { provider, userId: req.user.id, expires });
+    res.status(201).json({ url: `${config.baseUrl}/connect/${token}`, expiresAt: expires });
   });
 
-  app.get('/auth/meta/callback', signedIn, async (req, res) => {
+  function openLink(token) {
+    const link = links.get(token);
+    if (!link || link.expires <= now()) return null;
+    const user = store.getUser(link.userId);
+    return user && !user.disabled ? { link, user } : null;
+  }
+
+  const deadLink = (res) => linkPage(res, 410, 'This link no longer works', '<p class="auth-note">It has expired, or it was already used. Copy a new one from the Accounts page in Airslot.</p>');
+
+  // Opening the link only shows this page. Previews and link checkers fetch it too, so only the button uses it up.
+  app.get('/connect/:token', (req, res) => {
+    const opened = openLink(req.params.token);
+    if (!opened) return deadLink(res);
+    linkPage(res, 200, 'Connect to Airslot?', `
+      <p class="auth-note">This adds the ${PROVIDER_NAMES[opened.link.provider]} account you choose next to the Airslot login <strong>${escapeHtml(opened.user.username)}</strong>.</p>
+      <p class="auth-note"><strong>Only continue if you made this link yourself.</strong> Whoever holds that Airslot login will be able to post to the account you connect.</p>
+      <form method="post"><button class="btn btn-primary auth-submit connect-continue" type="submit">Continue</button></form>`);
+  });
+
+  app.post('/connect/:token', (req, res) => {
+    const opened = openLink(req.params.token);
+    links.delete(req.params.token);
+    if (!opened) return deadLink(res);
+    const { provider } = opened.link;
+    res.redirect(303, dialogUrl[provider](issueState(provider, opened.user.id, true)));
+  });
+
+  app.get('/auth/meta/start', signedIn, (req, res) => {
+    if (!providerReady.meta()) return finish(req, res, { level: 'error', text: "Meta isn't set up on this server yet." });
+    res.redirect(metaDialogUrl(issueState('meta', req.user.id)));
+  });
+
+  app.get('/auth/meta/callback', async (req, res) => {
     const { meta } = config;
-    if (!consumeState(req.query.state, 'meta', req.user.id)) return finish(req, res, { level: 'error', text: 'The Meta sign-in session expired. Try connecting again.' });
-    if (!req.query.code) return finish(req, res, { level: 'error', text: 'Meta sign-in was canceled or permission was denied.' });
+    const context = callbackContext(req, res, 'meta');
+    if (!context) return;
+    const { user, valid, finish: done } = context;
+    if (!valid) return done({ level: 'error', text: 'The Meta sign-in session expired. Try connecting again.' });
+    if (!req.query.code) return done({ level: 'error', text: 'Meta sign-in was canceled or permission was denied.' });
     try {
       const root = `${meta.graphUrl}/${meta.version}`;
       const short = await call(`${root}/oauth/access_token?${new URLSearchParams({
@@ -122,7 +250,7 @@ export function registerOAuth(app, { config, store, setFlash }) {
       })}`);
       const graph = createGraph(meta);
       const pages = await grantedPages(meta, graph, long.access_token);
-      if (pages.length === 0) return finish(req, res, { level: 'error', text: 'Sign-in worked, but Meta returned no Facebook Page for this account. Connect again and tick your Page in the list.' });
+      if (pages.length === 0) return done({ level: 'error', text: 'Sign-in worked, but Meta returned no Facebook Page for this account. Connect again and tick your Page in the list.' });
 
       // A Page token derived from a long-lived user token does not expire on a timer.
       const candidates = pages.flatMap((page) => {
@@ -132,8 +260,8 @@ export function registerOAuth(app, { config, store, setFlash }) {
           ...(ig ? [{ platform: 'instagram', remote_id: ig.id, name: `@${ig.username}`, token: page.access_token }] : []),
         ];
       });
-      const { connected, note } = connectWithinLimit(req.user, candidates);
-      if (connected.length === 0) return finish(req, res, { level: 'error', text: `Nothing new was connected. ${note}` });
+      const { connected, note } = connectWithinLimit(user, candidates);
+      if (connected.length === 0) return done({ level: 'error', text: `Nothing new was connected. ${note}` });
 
       const pageCount = connected.filter((account) => account.platform === 'facebook').length;
       const igCount = connected.filter((account) => account.platform === 'instagram').length;
@@ -143,33 +271,25 @@ export function registerOAuth(app, { config, store, setFlash }) {
         igCount > 0 && `${igCount} Instagram ${igCount === 1 ? 'account' : 'accounts'}`,
         noneLinked && 'no Instagram account linked to them',
       ].filter(Boolean);
-      finish(req, res, { level: note || noneLinked ? 'warn' : 'ok', text: `Connected ${parts.join(', ')}.${note ? ` ${note}` : ''}` });
+      done({ level: note || noneLinked ? 'warn' : 'ok', text: `Connected ${parts.join(', ')}.${note ? ` ${note}` : ''}` });
     } catch (err) {
       console.error(`[oauth meta] ${err.message}${err.detail ? ` (${err.detail})` : ''}`);
-      finish(req, res, { level: 'error', text: `Couldn't connect Meta: ${err.message}` });
+      done({ level: 'error', text: `Couldn't connect Meta: ${err.message}` });
     }
   });
 
   app.get('/auth/google/start', signedIn, (req, res) => {
-    const { google } = config;
-    if (!google.clientId || !google.clientSecret) return finish(req, res, { level: 'error', text: "YouTube isn't set up on this server yet." });
-    const params = new URLSearchParams({
-      client_id: google.clientId,
-      redirect_uri: redirectUri('google'),
-      response_type: 'code',
-      scope: YOUTUBE_SCOPE,
-      access_type: 'offline',
-      // select_account always offers a choice, so a second Google account can be added.
-      prompt: 'select_account consent',
-      state: issueState('google', req.user.id),
-    });
-    res.redirect(`${google.authUrl}?${params}`);
+    if (!providerReady.google()) return finish(req, res, { level: 'error', text: "YouTube isn't set up on this server yet." });
+    res.redirect(googleDialogUrl(issueState('google', req.user.id)));
   });
 
-  app.get('/auth/google/callback', signedIn, async (req, res) => {
+  app.get('/auth/google/callback', async (req, res) => {
     const { google } = config;
-    if (!consumeState(req.query.state, 'google', req.user.id)) return finish(req, res, { level: 'error', text: 'The Google sign-in session expired. Try connecting again.' });
-    if (!req.query.code) return finish(req, res, { level: 'error', text: 'Google sign-in was canceled or permission was denied.' });
+    const context = callbackContext(req, res, 'google');
+    if (!context) return;
+    const { user, valid, finish: done } = context;
+    if (!valid) return done({ level: 'error', text: 'The Google sign-in session expired. Try connecting again.' });
+    if (!req.query.code) return done({ level: 'error', text: 'Google sign-in was canceled or permission was denied.' });
     try {
       const tokens = await call(google.tokenUrl, {
         method: 'POST',
@@ -186,8 +306,8 @@ export function registerOAuth(app, { config, store, setFlash }) {
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       });
       const channel = channels.items?.[0];
-      if (!channel) return finish(req, res, { level: 'error', text: "This Google account doesn't have a YouTube channel yet." });
-      const { connected, note } = connectWithinLimit(req.user, [{
+      if (!channel) return done({ level: 'error', text: "This Google account doesn't have a YouTube channel yet." });
+      const { connected, note } = connectWithinLimit(user, [{
         platform: 'youtube',
         remote_id: channel.id,
         name: channel.snippet.title,
@@ -195,11 +315,11 @@ export function registerOAuth(app, { config, store, setFlash }) {
         refresh_token: tokens.refresh_token,
         token_expires_at: Date.now() + tokens.expires_in * 1000,
       }]);
-      if (connected.length === 0) return finish(req, res, { level: 'error', text: `Nothing new was connected. ${note}` });
-      finish(req, res, { level: 'ok', text: `Connected YouTube channel ${channel.snippet.title}.` });
+      if (connected.length === 0) return done({ level: 'error', text: `Nothing new was connected. ${note}` });
+      done({ level: 'ok', text: `Connected YouTube channel ${channel.snippet.title}.` });
     } catch (err) {
       console.error(`[oauth google] ${err.message}`);
-      finish(req, res, { level: 'error', text: `Couldn't connect YouTube: ${err.message}` });
+      done({ level: 'error', text: `Couldn't connect YouTube: ${err.message}` });
     }
   });
 }

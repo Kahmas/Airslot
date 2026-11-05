@@ -6,7 +6,7 @@ const SITE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const ROUTES = { '/': 'index.html', '/privacy': 'privacy.html', '/terms': 'terms.html' };
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
-const escapeHtml = (text) => text.replace(/[&<>"']/g, (char) => ENTITIES[char]);
+export const escapeHtml = (text) => text.replace(/[&<>"']/g, (char) => ENTITIES[char]);
 
 // Google and Meta need a home page and privacy policy that anyone can open without an account.
 // This serves those fixed pages on a separate hostname, and that hostname can reach nothing else.

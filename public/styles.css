@@ -764,7 +764,8 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; overfl
   background: var(--surface-2);
   border-radius: var(--radius-s);
 }
-.copy-row code { min-width: 0; font-size: 0.8125rem; overflow-wrap: anywhere; }
+.copy-row code { flex: 1; min-width: 0; font-size: 0.8125rem; overflow-wrap: anywhere; }
+.copy-actions { display: flex; flex: none; gap: 6px; }
 .copy-list { display: grid; gap: 4px; margin-top: 6px; }
 .copy-list .copy-row { margin-top: 0; }
 
@@ -832,6 +833,13 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 0.85em; overfl
 .auth-legal { color: var(--muted); font-size: 0.8125rem; }
 .auth-legal a, .auth-links a { color: var(--accent-text); font-weight: 600; }
 .auth-links { display: grid; gap: 6px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.875rem; }
+
+/* The page a copied connect link opens, in a browser profile with no Airslot login. */
+.connect-page { display: grid; align-content: start; gap: 16px; width: 100%; max-width: 460px; margin: 0 auto; padding: 48px 16px; }
+.connect-page .auth-submit { width: 100%; }
+.connect-link { display: grid; flex-basis: 100%; gap: 6px; min-width: 0; }
+.connect-link[hidden] { display: none; }
+.connect-link .copy-row { margin-top: 0; }
 
 /* Profile and admin */
 .profile { display: grid; gap: 16px; max-width: 560px; }

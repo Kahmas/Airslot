@@ -54,12 +54,12 @@ What the app does for you:
 - If the admin loses their own password, run `sudo /opt/airslot/reset-password USERNAME` on the server. Locally, run `node src/reset-password.js USERNAME`.
 - Login attempts are limited per username and per address, and sign-up attempts per address.
 - A video that never became a post is removed after about a day, the next time that person starts an upload.
-- One login can hold accounts from several Facebook logins and Google accounts. The Guide shows how to add another. Past the account limit, a sign-in connects what fits and names what it left out. Connecting an existing account again only refreshes it, so it still works at the limit, and a lower limit leaves connected accounts in place.
+- One login can hold accounts from several Facebook logins and Google accounts. **Use another browser profile** on the Accounts page makes a link to paste into the browser profile where the other account is logged in, so nobody has to log out. It needs no Airslot login there, works once, lasts 15 minutes, and names the Airslot login that receives the account before anything happens. Whoever follows it attaches their account to the person who made it, so it should not be shared. The Guide shows the steps. Past the account limit, a sign-in connects what fits and names what it left out. Connecting an existing account again only refreshes it, so it still works at the limit, and a lower limit leaves connected accounts in place.
 - When someone's storage is full, new uploads are refused with a message, and posts already scheduled still go out. A limit lower than what someone already uses keeps their videos and only stops new uploads. The limits can add up to more than the disk holds, so watch the free space shown on the Admin page.
 
 What the platforms require before other people can connect:
 
-- **Meta:** while the app is in Development, only people with a role on it can sign in. Add them as testers. Letting anyone connect needs App Review for the five permissions and Business Verification.
+- **Meta:** while the app is in Development, only people with a role on it can sign in, and Meta says test posts can only be seen by role users, so check a post from a logged-out browser. Add people as testers. Meta allows your employees or people who agreed to test on your behalf, and most apps can have up to 50. Letting anyone connect needs App Review for the five permissions and Business Verification.
 - **Google:** an unverified app can have up to 100 users in its lifetime, and everyone sees a warning. Verification removes both.
 - **YouTube:** uploads count against the whole Google project, so everyone on the server shares one allowance. The app stops new YouTube posts once 100 have been created in 24 hours.
 

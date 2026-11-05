@@ -111,7 +111,13 @@ export function createApp({ config, store, scheduler, platforms, now = Date.now 
   });
 
   auth.register(app);
-  registerOAuth(app, { config, store, setFlash: (userId, value) => flashes.set(userId, value) });
+  registerOAuth(app, {
+    config,
+    store,
+    now,
+    stylesheet: `${assets.prefix}/styles.css`,
+    setFlash: (userId, value) => flashes.set(userId, value),
+  });
 
   // Everything below belongs to whoever is logged in, and every lookup is limited to that person.
   app.use('/api', auth.requireUser);
