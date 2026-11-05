@@ -10,7 +10,12 @@ mkdir -p "$BIN" "$FIX"
 export FAKE
 pass=0; fail=0
 ok() { pass=$((pass+1)); echo "  pass: $1"; }
-no() { fail=$((fail+1)); echo "  FAIL: $1"; }
+no() {
+  fail=$((fail+1))
+  echo "  FAIL: $1"
+  # Shows on the GitHub run page, where reading the raw log needs a login.
+  if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::error::$1"; fi
+}
 check() { if eval "$2"; then ok "$1"; else no "$1"; fi; }
 
 cat >"$BIN/id" <<'EOF'
@@ -75,6 +80,18 @@ tar -C "$FIX" -cJf "$FIX/$REL.tar.xz" "$REL"
 } >"$FIX/SHASUMS256.txt"
 
 SAFE_PATH="$BIN:/usr/bin:/mingw64/bin"
+# These checks need FFmpeg to start out missing, so a real one on this machine has to stay out of sight.
+if [ -x /usr/bin/ffmpeg ] || [ -x /usr/bin/ffprobe ]; then
+  SYSTEM_BIN="$BASE/system-bin"
+  mkdir -p "$SYSTEM_BIN"
+  for tool in /usr/bin/*; do
+    case "${tool##*/}" in
+      ffmpeg|ffprobe) ;;
+      *) ln -s "$tool" "$SYSTEM_BIN/" ;;
+    esac
+  done
+  SAFE_PATH="$BIN:$SYSTEM_BIN"
+fi
 run() { # usage: run <prefix> [args]; env passes through
   local prefix="$1"; shift
   AIRSLOT_TEST_PREFIX="$prefix" PATH="$SAFE_PATH" bash "$SCRIPT" "$@" >"$BASE/out" 2>&1
