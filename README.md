@@ -1,5 +1,7 @@
 # Airslot
 
+[![Tests](https://github.com/Kahmas/Airslot/actions/workflows/test.yml/badge.svg)](https://github.com/Kahmas/Airslot/actions/workflows/test.yml)
+
 Schedule one vertical video to Instagram Reels, Facebook Reels, and YouTube Shorts with one click. TikTok is not included yet.
 
 People sign up with an invite code, a username, and a password, and each person only sees their own accounts, videos, and posts.
