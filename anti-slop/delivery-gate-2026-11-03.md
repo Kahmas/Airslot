@@ -201,4 +201,6 @@ Publish now, added 4 November 2026: a second labeled radio in the Publish time c
 
 Account limits, added 5 November 2026: the Admin row gained an Account limit button that reuses the Storage limit dialog, and the row reads "2 of 3 accounts". The Accounts page states the count in its subtitle instead of adding a meter, because it is a small whole number. A group with no accounts drops its connect button when there is no room, since the button could only fail.
 
+Clearer account buttons, added 5 November 2026: the owner pointed out that "Connect with Meta again" could mean either adding or reconnecting. Now a group says "Add another account" or "Add another channel", and "Reconnect" appears only beside an account whose access expired, so each button says what it does. Viewed as a new person, a person with an expired account, and a person at their limit. No overflow at 320px, and no control under 44px.
+
 Not clicked: the Copy button inside the new password dialog after its last change, the storage bar with a real limit (covered by `test/isolation.test.js`), and real Meta or Google sign-in as a second person, which needs the Meta role and the live server.

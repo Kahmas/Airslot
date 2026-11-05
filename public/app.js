@@ -953,11 +953,18 @@ function viewSchedule() {
 
 /* ---------- Accounts ---------- */
 
+const CONNECT_URLS = { facebook: '/auth/meta/start', instagram: '/auth/meta/start', youtube: '/auth/google/start' };
+
 function renderAccountRow(account) {
   const platform = PLATFORMS[account.platform].name;
   return h('li', { class: 'account-row' },
     platformMark(account.platform),
     h('span', { class: 'account-name' }, account.name, h('small', {}, platform)),
+    account.needsReconnect && !appState.demo && h('a', {
+      class: 'btn btn-secondary btn-small',
+      href: CONNECT_URLS[account.platform],
+      'aria-label': `Reconnect ${platform} ${account.name}`,
+    }, 'Reconnect'),
     h('button', {
       class: 'btn btn-danger btn-small',
       type: 'button',
@@ -980,7 +987,7 @@ function renderAccountRow(account) {
         }
       },
     }, 'Disconnect'),
-    account.needsReconnect && h('span', { class: 'account-warning' }, 'Access has expired. Reconnect with the button below.'));
+    account.needsReconnect && h('span', { class: 'account-warning' }, 'Access has expired. Reconnect while logged in to the account that runs it.'));
 }
 
 const accountsAreFull = () => appState.accountLimit != null && appState.accounts.length >= appState.accountLimit;
@@ -991,17 +998,15 @@ function accountsSummary() {
   return accountsAreFull() ? `${used} To add another, disconnect one or ask your admin for more.` : `Where your videos can go. ${used}`;
 }
 
-function renderAccountGroup({ title, note, platforms, configured, startUrl, connectLabel, guide }) {
+function renderAccountGroup({ title, note, platforms, configured, startUrl, connectLabel, addLabel, guide }) {
   const accounts = appState.accounts.filter((account) => platforms.includes(account.platform));
-  // With accounts here, the button still has a use: connecting again refreshes their access.
-  const noRoomForNew = accountsAreFull() && accounts.length === 0;
   let action;
   if (appState.demo) {
     action = h('p', { class: 'field-hint' }, 'Connecting real accounts is turned off in demo mode. Run npm start to use your own.');
-  } else if (noRoomForNew) {
-    action = h('p', { class: 'field-hint' }, 'You have reached your account limit, so there is no room to connect this one yet.');
+  } else if (accountsAreFull()) {
+    action = h('p', { class: 'field-hint' }, "You have reached your account limit, so you can't add another here yet.");
   } else if (configured) {
-    action = h('a', { class: accounts.length ? 'btn btn-secondary' : 'btn btn-primary', href: startUrl }, accounts.length ? `${connectLabel} again` : connectLabel);
+    action = h('a', { class: accounts.length ? 'btn btn-secondary' : 'btn btn-primary', href: startUrl }, accounts.length ? addLabel : connectLabel);
   } else {
     action = h('p', { class: 'field-hint' }, appState.user.isAdmin
       ? 'Not ready to connect yet, because the server still needs its keys. The setup guide shows how to get them.'
@@ -1028,6 +1033,7 @@ function viewAccounts() {
         configured: appState.connect.meta,
         startUrl: '/auth/meta/start',
         connectLabel: 'Connect with Meta',
+        addLabel: 'Add another account',
         guide: '#/guide/meta',
       }),
       renderAccountGroup({
@@ -1037,6 +1043,7 @@ function viewAccounts() {
         configured: appState.connect.google,
         startUrl: '/auth/google/start',
         connectLabel: 'Connect a YouTube channel',
+        addLabel: 'Add another channel',
         guide: '#/guide/youtube',
       })),
   );
