@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Airslot</title>
+  <link rel="preload" href="/fonts/plus-jakarta-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    try {
+      const saved = localStorage.getItem('theme');
+      if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+    } catch {}
+  </script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body class="signed-out">
+  <a class="skip-link" href="#view">Skip to content</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="#/schedule">Airslot</a>
+      <nav class="tabs" aria-label="Main">
+        <a href="#/schedule" data-route="schedule">Schedule</a>
+        <a href="#/accounts" data-route="accounts">Accounts</a>
+        <a href="#/guide" data-route="guide">Guide</a>
+        <a href="#/admin" data-route="admin" id="admin-tab" hidden>Admin</a>
+        <a href="#/profile" data-route="profile">Profile</a>
+      </nav>
+      <p class="clock" id="clock"></p>
+      <button class="icon-button" id="theme-toggle" type="button"></button>
+      <button class="btn btn-secondary topbar-logout" id="logout-button" type="button">Log out</button>
+      <a class="btn btn-primary new-post" href="#/new" data-route="new">
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path d="M8 2.5v11M2.5 8h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        New post
+      </a>
+    </div>
+  </header>
+  <p class="demo-banner" id="demo-banner" hidden>Demo mode. Accounts and platforms here are simulated, so nothing is actually posted.</p>
+  <main id="view" tabindex="-1"></main>
+  <footer class="site-footer" id="footer"></footer>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+  <dialog class="confirm" id="confirm">
+    <form method="dialog">
+      <h2 id="confirm-title"></h2>
+      <p id="confirm-text"></p>
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" value="cancel" type="submit" autofocus>Keep it</button>
+        <button class="btn btn-danger" value="ok" id="confirm-ok" type="submit"></button>
+      </div>
+    </form>
+  </dialog>
+  <dialog class="confirm" id="limit">
+    <form method="dialog" novalidate>
+      <h2 id="limit-title"></h2>
+      <p id="limit-text"></p>
+      <div class="field limit-field">
+        <label for="limit-input">Storage limit in GB</label>
+        <input id="limit-input" type="text" inputmode="decimal" autocomplete="off">
+        <span class="field-hint" id="limit-hint"></span>
+      </div>
+      <p class="form-error" id="limit-error" role="alert" hidden></p>
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" id="limit-cancel" type="button">Keep it</button>
+        <button class="btn btn-secondary" value="save" type="submit">Save limit</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog class="confirm" id="secret">
+    <form method="dialog">
+      <h2 id="secret-title"></h2>
+      <p id="secret-text"></p>
+      <div class="copy-row">
+        <code id="secret-value"></code>
+        <button class="btn btn-secondary btn-small" id="secret-copy" type="button" autofocus>Copy</button>
+      </div>
+      <p id="secret-status" role="status"></p>
+      <div class="confirm-actions">
+        <button class="btn btn-secondary" type="submit">Done</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

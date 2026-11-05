@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Secrets and settings
+.env
+.env.*
+!.env.example
+secret.key
+
+# App data: databases, uploaded videos, covers
+data/
+data-demo/
+*.db
+*.db-shm
+*.db-wal
+*.db.before-users
+
+# Build output
+airslot.tar.gz
+package-test-*.tar.gz
+
+# Local tools and system files
+.claude/
+*.log
+.DS_Store
+Thumbs.db
