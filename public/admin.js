@@ -62,31 +62,32 @@ export function viewAdmin(view, ui) {
           h('span', {}, `${invite.usedBy}, ${formatDate(invite.usedAt)}`))))));
   }
 
-  // Resolves with bytes, null for the default, or undefined when the dialog is closed without saving.
-  function askStorageLimit(person) {
+  // Resolves with the parsed value, null for the default, or undefined when the dialog is closed without saving.
+  function askLimit({ title, text, label, hint, value, parse, invalid }) {
     const dialog = document.getElementById('limit');
     const form = dialog.querySelector('form');
     const input = document.getElementById('limit-input');
     const error = document.getElementById('limit-error');
-    document.getElementById('limit-title').textContent = `Storage limit for ${person.username}`;
-    document.getElementById('limit-text').textContent = `They use ${formatStorage(person.usedBytes)} now, and the server has ${formatStorage(data.freeBytes)} free. A lower limit keeps their videos and only stops new uploads.`;
-    document.getElementById('limit-hint').textContent = `Leave empty to use the default of ${formatStorage(data.defaultLimitBytes)}.`;
-    input.value = person.customLimit ? String(Math.round((person.limitBytes / GB) * 100) / 100) : '';
+    document.getElementById('limit-title').textContent = title;
+    document.getElementById('limit-text').textContent = text;
+    document.getElementById('limit-label').textContent = label;
+    document.getElementById('limit-hint').textContent = hint;
+    input.value = value;
     error.hidden = true;
 
     return new Promise((resolve) => {
       let answer;
       const submit = (event) => {
-        const text = input.value.trim().replace(',', '.');
-        const gigabytes = Number(text);
-        if (text !== '' && (!Number.isFinite(gigabytes) || gigabytes < 0)) {
+        const typed = input.value.trim();
+        const parsed = typed === '' ? null : parse(typed);
+        if (parsed === undefined) {
           event.preventDefault();
-          error.textContent = 'Type a number of gigabytes, such as 5 or 1.5.';
+          error.textContent = invalid;
           error.hidden = false;
           input.focus();
           return;
         }
-        answer = text === '' ? null : Math.round(gigabytes * GB);
+        answer = parsed;
       };
       const cancel = () => dialog.close();
       form.addEventListener('submit', submit);
@@ -100,6 +101,29 @@ export function viewAdmin(view, ui) {
       input.select();
     });
   }
+
+  const askStorageLimit = (person) => askLimit({
+    title: `Storage limit for ${person.username}`,
+    text: `They use ${formatStorage(person.usedBytes)} now, and the server has ${formatStorage(data.freeBytes)} free. A lower limit keeps their videos and only stops new uploads.`,
+    label: 'Storage limit in GB',
+    hint: `Leave empty to use the default of ${formatStorage(data.defaultLimitBytes)}.`,
+    value: person.customLimit ? String(Math.round((person.limitBytes / GB) * 100) / 100) : '',
+    invalid: 'Type a number of gigabytes, such as 5 or 1.5.',
+    parse: (typed) => {
+      const gigabytes = Number(typed.replace(',', '.'));
+      return Number.isFinite(gigabytes) && gigabytes >= 0 ? Math.round(gigabytes * GB) : undefined;
+    },
+  });
+
+  const askAccountLimit = (person) => askLimit({
+    title: `Account limit for ${person.username}`,
+    text: `They have ${plural(person.accountCount, 'account')} connected. Each Facebook Page, Instagram account, and YouTube channel counts as one. A lower limit keeps what is connected and only stops new ones.`,
+    label: 'Number of accounts',
+    hint: `Leave empty to use the default of ${data.defaultAccountLimit}.`,
+    value: person.customAccountLimit ? String(person.accountLimit) : '',
+    invalid: 'Type a whole number, such as 3.',
+    parse: (typed) => (/^\d+$/.test(typed) ? Number(typed) : undefined),
+  });
 
   function renderPerson(person) {
     const isSelf = person.id === appState.user.id;
@@ -116,8 +140,19 @@ export function viewAdmin(view, ui) {
         person.disabled && h('span', { class: 'pill pill-fail' }, 'Turned off'),
         isFull && h('span', { class: 'pill pill-warn' }, 'Storage full')),
       h('p', { class: 'person-meta' },
-        `${plural(person.accountCount, 'account')}, ${plural(person.postCount, 'post')}, ${storage}. Joined ${formatDate(person.createdAt)}.`),
+        `${person.accountLimit == null ? plural(person.accountCount, 'account') : `${person.accountCount} of ${plural(person.accountLimit, 'account')}`}, ${plural(person.postCount, 'post')}, ${storage}. Joined ${formatDate(person.createdAt)}.`),
       !isSelf && h('div', { class: 'person-actions' },
+        h('button', {
+          class: 'btn btn-secondary btn-small',
+          type: 'button',
+          'data-focus-key': `accounts-${person.id}`,
+          'aria-label': `Change the account limit for ${person.username}`,
+          onclick: async () => {
+            const limit = await askAccountLimit(person);
+            if (limit === undefined) return;
+            run(() => api(`/api/admin/users/${person.id}/account-limit`, { method: 'POST', body: { limit } }), `Account limit saved for ${person.username}.`);
+          },
+        }, 'Account limit'),
         h('button', {
           class: 'btn btn-secondary btn-small',
           type: 'button',

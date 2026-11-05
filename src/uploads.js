@@ -5,6 +5,7 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import express from 'express';
 import { HttpError } from './http-error.js';
+import { storageLimitFor } from './limits.js';
 import { checkVideo, makeThumbnail, moveMoovToFront, probeVideo } from './video-check.js';
 
 const ALLOWED_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi']);
@@ -31,12 +32,6 @@ function videoView(video) {
 }
 
 const gigabytes = (bytes) => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-
-// Admin accounts have no limit. Anyone else has the limit an admin set for them, or the server's default.
-export function storageLimitFor(config, user) {
-  if (user.is_admin) return null;
-  return user.storage_limit_bytes ?? config.storage.perUserBytes;
-}
 
 export function registerUploads(app, { config, store, videosDir, now, removeVideoFiles }) {
   const sessions = new Map();

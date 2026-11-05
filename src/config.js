@@ -26,6 +26,10 @@ export function loadConfig(env = process.env) {
     storage: {
       perUserBytes: Number(env.USER_STORAGE_MB ?? 10240) * 1024 * 1024,
     },
+    accounts: {
+      // Each Facebook Page, Instagram account, and YouTube channel counts as one.
+      perUser: Number(env.USER_ACCOUNT_LIMIT ?? 3),
+    },
     retention: {
       // Finished posts and their videos leave this server after this long. Posts on the platforms stay.
       postMs: Number(env.POST_RETENTION_DAYS ?? 7) * 24 * 60 * MINUTE,

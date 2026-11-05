@@ -10,7 +10,8 @@ const USER_TABLES = `
     is_admin INTEGER NOT NULL DEFAULT 0,
     disabled INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
-    storage_limit_bytes INTEGER
+    storage_limit_bytes INTEGER,
+    account_limit INTEGER
   );
   CREATE TABLE IF NOT EXISTS sessions (
     token_hash TEXT PRIMARY KEY,
@@ -161,7 +162,7 @@ export function createStore(dbPath, vault, now = Date.now) {
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(USER_TABLES);
   // A NULL limit means the server's default applies.
-  addColumns(db, 'users', { storage_limit_bytes: 'INTEGER' });
+  addColumns(db, 'users', { storage_limit_bytes: 'INTEGER', account_limit: 'INTEGER' });
   migrateToUsers(db, dbPath);
   db.exec(SCHEMA);
   addColumns(db, 'videos', {
@@ -254,9 +255,13 @@ export function createStore(dbPath, vault, now = Date.now) {
       db.prepare('UPDATE users SET storage_limit_bytes = ? WHERE id = ?').run(limitBytes, userId);
     },
 
+    setAccountLimit(userId, limit) {
+      db.prepare('UPDATE users SET account_limit = ? WHERE id = ?').run(limit, userId);
+    },
+
     listUsers() {
       return db.prepare(`
-        SELECT u.id, u.username, u.is_admin, u.disabled, u.created_at, u.storage_limit_bytes,
+        SELECT u.id, u.username, u.is_admin, u.disabled, u.created_at, u.storage_limit_bytes, u.account_limit,
           (SELECT COUNT(*) FROM accounts a WHERE a.user_id = u.id) AS account_count,
           (SELECT COUNT(*) FROM posts p WHERE p.user_id = u.id) AS post_count,
           (SELECT COALESCE(SUM(v.size + v.cover_size), 0) FROM videos v WHERE v.user_id = u.id) AS used_bytes
@@ -273,7 +278,7 @@ export function createStore(dbPath, vault, now = Date.now) {
     // Returns nothing for an expired session or a disabled person, so either one locks out at once.
     getSessionUser(tokenHash) {
       return db.prepare(`
-        SELECT u.id, u.username, u.is_admin, u.storage_limit_bytes, s.expires_at
+        SELECT u.id, u.username, u.is_admin, u.storage_limit_bytes, u.account_limit, s.expires_at
         FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.expires_at > ? AND u.disabled = 0
       `).get(tokenHash, now()) ?? null;
@@ -327,6 +332,14 @@ export function createStore(dbPath, vault, now = Date.now) {
 
     listAccounts(userId) {
       return db.prepare('SELECT * FROM accounts WHERE user_id = ? ORDER BY platform, name').all(userId).map(publicAccount);
+    },
+
+    countAccounts(userId) {
+      return db.prepare('SELECT COUNT(*) AS n FROM accounts WHERE user_id = ?').get(userId).n;
+    },
+
+    hasAccount(userId, platform, remoteId) {
+      return Boolean(db.prepare('SELECT 1 FROM accounts WHERE user_id = ? AND platform = ? AND remote_id = ?').get(userId, platform, remoteId));
     },
 
     // For the scheduler, which works on behalf of whoever owns the post.

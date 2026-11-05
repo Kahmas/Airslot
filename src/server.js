@@ -7,11 +7,12 @@ import { registerAdmin } from './admin.js';
 import { createAuth } from './auth.js';
 import { registerCovers } from './covers.js';
 import { HttpError } from './http-error.js';
+import { accountLimitFor, storageLimitFor } from './limits.js';
 import { registerOAuth } from './oauth.js';
 import { DAILY_LIMITS, SHARED_YOUTUBE_UPLOADS_PER_DAY } from './platforms/index.js';
 import { publicSite } from './site.js';
 import { ACTIVE_STATUSES, coverFile, videoFiles } from './store.js';
-import { clearAbandonedUploads, registerUploads, storageLimitFor } from './uploads.js';
+import { clearAbandonedUploads, registerUploads } from './uploads.js';
 import { checkText, checkVideo } from './video-check.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -128,6 +129,7 @@ export function createApp({ config, store, scheduler, platforms, now = Date.now 
       siteHost: config.site.host,
       user: { id: req.user.id, username: req.user.username, isAdmin: Boolean(req.user.is_admin) },
       accounts: store.listAccounts(req.user.id),
+      accountLimit: accountLimitFor(config, req.user),
       connect: {
         meta: Boolean(config.meta.appId && config.meta.appSecret),
         google: Boolean(config.google.clientId && config.google.clientSecret),

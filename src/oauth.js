@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { accountLimitFor } from './limits.js';
 import { call, createGraph } from './platforms/http.js';
 
 const STATE_TTL_MS = 10 * 60_000;
@@ -65,6 +66,28 @@ export function registerOAuth(app, { config, store, setFlash }) {
     res.redirect('/#/accounts');
   }
 
+  // Connecting again only refreshes an account's access, so it never counts against the limit.
+  function connectWithinLimit(user, candidates) {
+    const limit = accountLimitFor(config, user);
+    let count = store.countAccounts(user.id);
+    const connected = [];
+    const leftOut = [];
+    for (const account of candidates) {
+      const isNew = !store.hasAccount(user.id, account.platform, account.remote_id);
+      if (isNew && limit != null && count >= limit) {
+        leftOut.push(account.name);
+      } else {
+        store.upsertAccount({ userId: user.id, ...account });
+        if (isNew) count += 1;
+        connected.push(account);
+      }
+    }
+    const note = leftOut.length > 0
+      ? `Your limit of ${limit} ${limit === 1 ? 'account' : 'accounts'} left out ${leftOut.join(', ')}. Disconnect an account, or ask your admin for more.`
+      : '';
+    return { connected, note };
+  }
+
   app.get('/auth/meta/start', signedIn, (req, res) => {
     const { meta } = config;
     if (!meta.appId || !meta.appSecret) return finish(req, res, { level: 'error', text: "Meta isn't set up on this server yet." });
@@ -101,19 +124,26 @@ export function registerOAuth(app, { config, store, setFlash }) {
       const pages = await grantedPages(meta, graph, long.access_token);
       if (pages.length === 0) return finish(req, res, { level: 'error', text: 'Sign-in worked, but Meta returned no Facebook Page for this account. Connect again and tick your Page in the list.' });
 
-      let linked = 0;
-      for (const page of pages) {
-        // A Page token derived from a long-lived user token does not expire on a timer.
-        store.upsertAccount({ userId: req.user.id, platform: 'facebook', remote_id: page.id, name: page.name, token: page.access_token });
+      // A Page token derived from a long-lived user token does not expire on a timer.
+      const candidates = pages.flatMap((page) => {
         const ig = page.instagram_business_account;
-        if (ig) {
-          store.upsertAccount({ userId: req.user.id, platform: 'instagram', remote_id: ig.id, name: `@${ig.username}`, token: page.access_token });
-          linked += 1;
-        }
-      }
-      const pageNote = `${pages.length} Facebook ${pages.length === 1 ? 'Page' : 'Pages'}`;
-      const igNote = linked ? `${linked} Instagram ${linked === 1 ? 'account' : 'accounts'}` : 'no Instagram account linked to them';
-      finish(req, res, { level: linked ? 'ok' : 'warn', text: `Connected ${pageNote}, ${igNote}.` });
+        return [
+          { platform: 'facebook', remote_id: page.id, name: page.name, token: page.access_token },
+          ...(ig ? [{ platform: 'instagram', remote_id: ig.id, name: `@${ig.username}`, token: page.access_token }] : []),
+        ];
+      });
+      const { connected, note } = connectWithinLimit(req.user, candidates);
+      if (connected.length === 0) return finish(req, res, { level: 'error', text: `Nothing new was connected. ${note}` });
+
+      const pageCount = connected.filter((account) => account.platform === 'facebook').length;
+      const igCount = connected.filter((account) => account.platform === 'instagram').length;
+      const noneLinked = !candidates.some((account) => account.platform === 'instagram');
+      const parts = [
+        pageCount > 0 && `${pageCount} Facebook ${pageCount === 1 ? 'Page' : 'Pages'}`,
+        igCount > 0 && `${igCount} Instagram ${igCount === 1 ? 'account' : 'accounts'}`,
+        noneLinked && 'no Instagram account linked to them',
+      ].filter(Boolean);
+      finish(req, res, { level: note || noneLinked ? 'warn' : 'ok', text: `Connected ${parts.join(', ')}.${note ? ` ${note}` : ''}` });
     } catch (err) {
       console.error(`[oauth meta] ${err.message}${err.detail ? ` (${err.detail})` : ''}`);
       finish(req, res, { level: 'error', text: `Couldn't connect Meta: ${err.message}` });
@@ -129,7 +159,8 @@ export function registerOAuth(app, { config, store, setFlash }) {
       response_type: 'code',
       scope: YOUTUBE_SCOPE,
       access_type: 'offline',
-      prompt: 'consent',
+      // select_account always offers a choice, so a second Google account can be added.
+      prompt: 'select_account consent',
       state: issueState('google', req.user.id),
     });
     res.redirect(`${google.authUrl}?${params}`);
@@ -156,15 +187,15 @@ export function registerOAuth(app, { config, store, setFlash }) {
       });
       const channel = channels.items?.[0];
       if (!channel) return finish(req, res, { level: 'error', text: "This Google account doesn't have a YouTube channel yet." });
-      store.upsertAccount({
-        userId: req.user.id,
+      const { connected, note } = connectWithinLimit(req.user, [{
         platform: 'youtube',
         remote_id: channel.id,
         name: channel.snippet.title,
         token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         token_expires_at: Date.now() + tokens.expires_in * 1000,
-      });
+      }]);
+      if (connected.length === 0) return finish(req, res, { level: 'error', text: `Nothing new was connected. ${note}` });
       finish(req, res, { level: 'ok', text: `Connected YouTube channel ${channel.snippet.title}.` });
     } catch (err) {
       console.error(`[oauth google] ${err.message}`);

@@ -222,7 +222,7 @@ export async function startMockPlatforms({ now = Date.now, processingPolls = 1 }
     if (!hasToken(req)) return send(res, 401, ytAuthError);
 
     if (pathname === '/youtube/v3/channels') {
-      return send(res, 200, { items: [{ id: 'channel-1', snippet: { title: 'Kanal Uji' } }] });
+      return send(res, 200, { items: [state.youtubeChannel ?? { id: 'channel-1', snippet: { title: 'Kanal Uji' } }] });
     }
     if (pathname === '/upload/youtube/v3/videos' && req.method === 'POST') {
       if (url.searchParams.get('uploadType') !== 'resumable') return send(res, 400, { error: { code: 400, message: 'uploadType must be resumable' } });

@@ -5,8 +5,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import express from 'express';
 import { HttpError } from './http-error.js';
+import { storageLimitFor } from './limits.js';
 import { coverFile } from './store.js';
-import { storageLimitFor } from './uploads.js';
 
 const run = promisify(execFile);
 

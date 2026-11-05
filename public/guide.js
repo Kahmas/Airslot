@@ -79,6 +79,11 @@ export function viewGuide(view, sub, { h, appState, toast }) {
     ),
   ];
 
+  function limitNote() {
+    if (appState.accountLimit == null) return null;
+    return note(b(`Your limit is ${appState.accountLimit} ${appState.accountLimit === 1 ? 'account' : 'accounts'}, and you have ${appState.accounts.length} connected. `), 'Each Facebook Page, Instagram account, and YouTube channel counts as one. Your admin can raise it.');
+  }
+
   function connectAction(configured, url, label, setupSection) {
     if (appState.demo) return note('Connecting real accounts is turned off in demo mode.');
     if (configured) return h('a', { class: 'btn btn-primary', href: url }, label);
@@ -91,7 +96,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
     if (names.length > 0) {
       return h('p', { class: 'guide-status' },
         h('span', { class: 'pill pill-ok' }, 'Connected'),
-        h('span', {}, `${names.join(', ')}. Follow this guide again only to add another account.`));
+        h('span', {}, `${names.join(', ')}. To add one more, go to the "Add another account" part.`));
     }
     return h('p', { class: 'guide-status' },
       h('span', { class: 'pill pill-active' }, 'Not connected'),
@@ -224,6 +229,25 @@ export function viewGuide(view, sub, { h, appState, toast }) {
           note('Then open both posts from a logged-out browser or another account, to check that other people can see them.'),
         ],
       },
+      {
+        title: 'Add another account',
+        intro: 'One Airslot login can hold accounts from different Facebook logins, for example a second email with its own Page and Instagram. Your first accounts stay connected.',
+        body: [
+          limitNote(),
+          steps(
+            'Make sure the other Facebook login runs a Page, with a professional Instagram account linked to it. Parts 1 to 3 cover this.',
+            [isAdmin
+              ? ['Add that Facebook login as a tester on the Meta app, as the Setup: Meta guide shows. It must accept the request at ', link('developers.facebook.com/requests', 'https://developers.facebook.com/requests'), '.']
+              : ['Ask your admin to add that Facebook login as a tester, then accept the request at ', link('developers.facebook.com/requests', 'https://developers.facebook.com/requests'), '. Skip this if Airslot has passed Meta\'s review.']],
+            ['Log out of your first account on ', link('Facebook', 'https://www.facebook.com'), ' in this browser. Meta connects whichever account is logged in.',
+              dont('skip this. If you stay logged in, Meta only asks about your first account again.')],
+            ['Open the ', h('a', { href: '#/accounts' }, 'Accounts page'), ', click ', b('Connect with Meta again'), ', and log in with the other Facebook login.'],
+            ['Choose ', b('Opt in to current Pages only'), ' and ', b('Opt in to current Instagram accounts only'), ', tick the accounts, and click ', b('Save'), '.'],
+          ),
+          see('the new Page and Instagram account listed on the Accounts page, along with your first ones.'),
+          note(b('When scheduling: '), 'every connected account starts switched on in New post, so turn off the ones this video is not for.'),
+        ],
+      },
     ]);
   }
 
@@ -276,6 +300,21 @@ export function viewGuide(view, sub, { h, appState, toast }) {
             ['Open ', link('YouTube Studio', 'https://studio.youtube.com'), ', then ', b('Content'), '.'],
           ),
           see('the video listed as private with your publish date. YouTube makes it public at that time, and the Schedule page then shows ', b('Published'), '.'),
+        ],
+      },
+      {
+        title: 'Add another account',
+        intro: 'One Airslot login can hold channels from different Google accounts. Your first channel stays connected.',
+        body: [
+          limitNote(),
+          steps(
+            'Make sure the other Google account has its own channel. Part 1 covers this.',
+            ['Open the ', h('a', { href: '#/accounts' }, 'Accounts page'), ' and click ', b('Connect a YouTube channel again'), '.'],
+            ['Google asks which account to use. Choose the other one, or click ', b('Use another account'), ' if it is not listed.'],
+            'Go through the same screens as in Part 2.',
+          ),
+          see('the new channel listed on the Accounts page, along with your first one.'),
+          note(b('When scheduling: '), 'every connected account starts switched on in New post, so turn off the ones this video is not for.'),
         ],
       },
     ]);
@@ -515,6 +554,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
       h('section', { class: 'card part' },
         h('h2', { class: 'card-title' }, 'Your Airslot account'),
         fix('Forgot your password', 'There is no email on your account to send a reset to.', 'Ask your admin to reset it, then change it on the Profile page.'),
+        fix('Your limit of ... left out', 'You have connected as many accounts as you are allowed. Each Facebook Page, Instagram account, and YouTube channel counts as one.', isAdmin ? 'Raise that person\'s limit on the Admin page.' : 'Disconnect an account you no longer use, or ask your admin for a higher limit.'),
         fix('That invite code is not valid', 'Each code works once, and an admin can remove one.', 'Ask your admin for a new code.'),
         fix('This account is turned off', 'An admin turned off your account.', 'Contact your admin.')),
     ];

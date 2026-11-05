@@ -3,7 +3,7 @@ import { statfsSync } from 'node:fs';
 import express from 'express';
 import { hashPassword } from './auth.js';
 import { HttpError } from './http-error.js';
-import { storageLimitFor } from './uploads.js';
+import { accountLimitFor, storageLimitFor } from './limits.js';
 
 // No I, O, 0, or 1, because people read these codes off a screen and retype them.
 const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -35,6 +35,8 @@ export function registerAdmin(app, { config, store, requireAdmin, videosDir }) {
         usedBytes: user.used_bytes,
         limitBytes: storageLimitFor(config, user),
         customLimit: user.storage_limit_bytes != null,
+        accountLimit: accountLimitFor(config, user),
+        customAccountLimit: user.account_limit != null,
       })),
       invites: store.listInvites().map((invite) => ({
         code: invite.code,
@@ -44,6 +46,7 @@ export function registerAdmin(app, { config, store, requireAdmin, videosDir }) {
       })),
       freeBytes: Number(disk.bavail) * Number(disk.bsize),
       defaultLimitBytes: config.storage.perUserBytes,
+      defaultAccountLimit: config.accounts.perUser,
       signupOpen: config.signup.open,
     });
   });
@@ -67,6 +70,17 @@ export function registerAdmin(app, { config, store, requireAdmin, videosDir }) {
       throw new HttpError(422, 'The storage limit is not valid.');
     }
     store.setStorageLimit(user.id, limitBytes);
+    res.status(204).end();
+  });
+
+  // A limit below what someone has connected keeps those accounts and only stops new ones. Null means the default.
+  app.post('/api/admin/users/:id/account-limit', requireAdmin, express.json({ limit: '1kb' }), (req, res) => {
+    const user = loadOtherUser(req);
+    const { limit } = req.body ?? {};
+    if (limit !== null && (!Number.isSafeInteger(limit) || limit < 0)) {
+      throw new HttpError(422, 'The account limit is not valid.');
+    }
+    store.setAccountLimit(user.id, limit);
     res.status(204).end();
   });
 

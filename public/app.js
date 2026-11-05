@@ -983,11 +983,23 @@ function renderAccountRow(account) {
     account.needsReconnect && h('span', { class: 'account-warning' }, 'Access has expired. Reconnect with the button below.'));
 }
 
+const accountsAreFull = () => appState.accountLimit != null && appState.accounts.length >= appState.accountLimit;
+
+function accountsSummary() {
+  if (appState.accountLimit == null) return 'Where your videos can go.';
+  const used = `${appState.accounts.length} of ${plural(appState.accountLimit, 'account')} connected.`;
+  return accountsAreFull() ? `${used} To add another, disconnect one or ask your admin for more.` : `Where your videos can go. ${used}`;
+}
+
 function renderAccountGroup({ title, note, platforms, configured, startUrl, connectLabel, guide }) {
   const accounts = appState.accounts.filter((account) => platforms.includes(account.platform));
+  // With accounts here, the button still has a use: connecting again refreshes their access.
+  const noRoomForNew = accountsAreFull() && accounts.length === 0;
   let action;
   if (appState.demo) {
     action = h('p', { class: 'field-hint' }, 'Connecting real accounts is turned off in demo mode. Run npm start to use your own.');
+  } else if (noRoomForNew) {
+    action = h('p', { class: 'field-hint' }, 'You have reached your account limit, so there is no room to connect this one yet.');
   } else if (configured) {
     action = h('a', { class: accounts.length ? 'btn btn-secondary' : 'btn btn-primary', href: startUrl }, accounts.length ? `${connectLabel} again` : connectLabel);
   } else {
@@ -1007,7 +1019,7 @@ function renderAccountGroup({ title, note, platforms, configured, startUrl, conn
 
 function viewAccounts() {
   view.replaceChildren(
-    pageHead('Accounts', 'Where your videos can go.'),
+    pageHead('Accounts', accountsSummary()),
     h('div', { class: 'accounts' },
       renderAccountGroup({
         title: 'Facebook and Instagram',

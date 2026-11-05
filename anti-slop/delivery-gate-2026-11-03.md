@@ -199,4 +199,6 @@ Cover card on New post, added 4 November 2026 (click-through in the next section
 
 Publish now, added 4 November 2026: a second labeled radio in the Publish time card. The date field gives way to one line saying processing can take a few minutes, and the action button changes to "Publish to 3 accounts now". There is no extra confirmation step, because choosing the radio and pressing a button that says "now" are already two deliberate actions.
 
+Account limits, added 5 November 2026: the Admin row gained an Account limit button that reuses the Storage limit dialog, and the row reads "2 of 3 accounts". The Accounts page states the count in its subtitle instead of adding a meter, because it is a small whole number. A group with no accounts drops its connect button when there is no room, since the button could only fail.
+
 Not clicked: the Copy button inside the new password dialog after its last change, the storage bar with a real limit (covered by `test/isolation.test.js`), and real Meta or Google sign-in as a second person, which needs the Meta role and the live server.

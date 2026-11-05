@@ -43,6 +43,7 @@ The first account created becomes the admin. It takes over any data from before 
 |---|---|---|
 | `SIGNUP_OPEN=true` | Lets anyone sign up without an invite code | Off |
 | `USER_STORAGE_MB` | The default for how much video each person can keep, in MB. Admin accounts have no limit, and an admin can set a different limit per person on the Admin page. | 10240 |
+| `USER_ACCOUNT_LIMIT` | The default for how many accounts each person can connect. Each Facebook Page, Instagram account, and YouTube channel counts as one. Admin accounts have no limit, and an admin can set a different limit per person on the Admin page. | 3 |
 | `POST_RETENTION_DAYS` | Days after the publish time before a finished post and its video leave this server. Posts on the platforms are not touched. The privacy policy and terms state 7 days, so update them if you change this. | 7 |
 
 What the app does for you:
@@ -53,6 +54,7 @@ What the app does for you:
 - If the admin loses their own password, run `sudo /opt/airslot/reset-password USERNAME` on the server. Locally, run `node src/reset-password.js USERNAME`.
 - Login attempts are limited per username and per address, and sign-up attempts per address.
 - A video that never became a post is removed after about a day, the next time that person starts an upload.
+- One login can hold accounts from several Facebook logins and Google accounts. The Guide shows how to add another. Past the account limit, a sign-in connects what fits and names what it left out. Connecting an existing account again only refreshes it, so it still works at the limit, and a lower limit leaves connected accounts in place.
 - When someone's storage is full, new uploads are refused with a message, and posts already scheduled still go out. A limit lower than what someone already uses keeps their videos and only stops new uploads. The limits can add up to more than the disk holds, so watch the free space shown on the Admin page.
 
 What the platforms require before other people can connect:
