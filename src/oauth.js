@@ -3,6 +3,7 @@ import express from 'express';
 import { HttpError } from './http-error.js';
 import { accountLimitFor } from './limits.js';
 import { call, createGraph } from './platforms/http.js';
+import { requestToken, TIKTOK_SCOPES, tiktokCall } from './platforms/tiktok.js';
 import { escapeHtml } from './site.js';
 
 const STATE_TTL_MS = 10 * 60_000;
@@ -11,7 +12,7 @@ const LINK_TTL_MS = 15 * 60_000;
 const YOUTUBE_SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
 const META_SCOPES = 'pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish';
 const PAGE_FIELDS = 'id,name,access_token,instagram_business_account{id,username}';
-const PROVIDER_NAMES = { meta: 'Facebook and Instagram', google: 'YouTube' };
+const PROVIDER_NAMES = { meta: 'Facebook and Instagram', google: 'YouTube', tiktok: 'TikTok' };
 
 // /me/accounts leaves out Pages a person reaches through a business portfolio, so when it comes back
 // empty, the Page IDs recorded on the grant itself are the remaining way to find what was approved.
@@ -91,11 +92,26 @@ export function registerOAuth(app, { config, store, setFlash, stylesheet, now = 
     return `${google.authUrl}?${params}`;
   }
 
+  function tiktokDialogUrl(state) {
+    const { tiktok } = config;
+    const params = new URLSearchParams({
+      client_key: tiktok.clientKey,
+      response_type: 'code',
+      scope: TIKTOK_SCOPES,
+      redirect_uri: redirectUri('tiktok'),
+      state,
+      // Always shows the permission page, so it is clear which TikTok account is about to connect.
+      disable_auto_auth: '1',
+    });
+    return `${tiktok.authUrl}?${params}`;
+  }
+
   const providerReady = {
     meta: () => Boolean(config.meta.appId && config.meta.appSecret),
     google: () => Boolean(config.google.clientId && config.google.clientSecret),
+    tiktok: () => Boolean(config.tiktok.clientKey && config.tiktok.clientSecret),
   };
-  const dialogUrl = { meta: metaDialogUrl, google: googleDialogUrl };
+  const dialogUrl = { meta: metaDialogUrl, google: googleDialogUrl, tiktok: tiktokDialogUrl };
 
   function signedIn(req, res, next) {
     if (req.user) return next();
@@ -320,6 +336,46 @@ export function registerOAuth(app, { config, store, setFlash, stylesheet, now = 
     } catch (err) {
       console.error(`[oauth google] ${err.message}`);
       done({ level: 'error', text: `Couldn't connect YouTube: ${err.message}` });
+    }
+  });
+
+  app.get('/auth/tiktok/start', signedIn, (req, res) => {
+    if (!providerReady.tiktok()) return finish(req, res, { level: 'error', text: "TikTok isn't set up on this server yet." });
+    res.redirect(tiktokDialogUrl(issueState('tiktok', req.user.id)));
+  });
+
+  app.get('/auth/tiktok/callback', async (req, res) => {
+    const { tiktok } = config;
+    const context = callbackContext(req, res, 'tiktok');
+    if (!context) return;
+    const { user, valid, finish: done } = context;
+    if (!valid) return done({ level: 'error', text: 'The TikTok sign-in session expired. Try connecting again.' });
+    if (!req.query.code) return done({ level: 'error', text: 'TikTok sign-in was canceled or permission was denied.' });
+    try {
+      const tokens = await requestToken(tiktok, {
+        grant_type: 'authorization_code',
+        code: String(req.query.code),
+        redirect_uri: redirectUri('tiktok'),
+      });
+      const granted = String(tokens.scope ?? '').split(',').map((scope) => scope.trim());
+      if (!granted.includes('video.upload')) {
+        return done({ level: 'error', text: 'TikTok connected without permission to send videos. Connect again and allow every permission.' });
+      }
+      const info = await tiktokCall(tiktok, '/v2/user/info/', tokens.access_token, { query: { fields: 'open_id,display_name' } });
+      const profile = info.user ?? info;
+      const { connected, note } = connectWithinLimit(user, [{
+        platform: 'tiktok',
+        remote_id: profile.open_id ?? tokens.open_id,
+        name: profile.display_name || 'TikTok account',
+        token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        token_expires_at: Date.now() + tokens.expires_in * 1000,
+      }]);
+      if (connected.length === 0) return done({ level: 'error', text: `Nothing new was connected. ${note}` });
+      done({ level: 'ok', text: `Connected TikTok account ${connected[0].name}.` });
+    } catch (err) {
+      console.error(`[oauth tiktok] ${err.message}${err.detail ? ` (${err.detail})` : ''}`);
+      done({ level: 'error', text: `Couldn't connect TikTok: ${err.message}` });
     }
   });
 }

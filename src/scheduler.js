@@ -30,7 +30,9 @@ export function createScheduler({ store, platforms, config, now = Date.now, log 
     videoPath: (target) => path.join(videosDir, target.file_name),
     coverPath: (target) => path.join(videosDir, coverFile(target.video_id)),
     coverUrl: (target) => `${config.baseUrl}/covers/${target.cover_token}.jpg`,
-    saveAccessToken: (accountId, token, expiresAt) => store.saveAccessToken(accountId, token, expiresAt),
+    mediaUrl: (token) => `${config.baseUrl}/media/${token}.mp4`,
+    loadAccount: (accountId) => store.getAccount(accountId),
+    saveAccessToken: (accountId, token, expiresAt, refreshToken) => store.saveAccessToken(accountId, token, expiresAt, refreshToken),
   };
 
   function fail(target, err) {

@@ -56,6 +56,7 @@ export function classify(response) {
       body.error_subcode != null && `subcode ${body.error_subcode}`,
       body.type,
       body.fbtrace_id && `trace ${body.fbtrace_id}`,
+      body.log_id && `log ${body.log_id}`,
     ].filter(Boolean).join(', ');
   } else if (upload) {
     error.detail = [`HTTP ${response.status}`, upload.type, upload.retriable != null && `retriable ${upload.retriable}`].filter(Boolean).join(', ');

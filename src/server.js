@@ -70,6 +70,8 @@ function targetView(target) {
     nextRunAt: target.next_run_at,
     remoteUrl: target.remote_url,
     coverNote: target.stage.coverNote ?? null,
+    // TikTok drafts arrive without a caption, so the schedule offers it for copying.
+    ...(target.platform === 'tiktok' ? { caption: target.caption } : {}),
   };
 }
 
@@ -139,6 +141,7 @@ export function createApp({ config, store, scheduler, platforms, now = Date.now 
       connect: {
         meta: Boolean(config.meta.appId && config.meta.appSecret),
         google: Boolean(config.google.clientId && config.google.clientSecret),
+        tiktok: Boolean(config.tiktok.clientKey && config.tiktok.clientSecret),
       },
       storage: {
         usedBytes: store.usedBytes(req.user.id),
@@ -181,6 +184,15 @@ export function createApp({ config, store, scheduler, platforms, now = Date.now 
   });
 
   registerCovers(app, { config, store, videosDir, sendOwnFile });
+
+  // TikTok fetches the video itself, from a link that only works while that send is under way.
+  app.get('/media/:file', (req, res) => {
+    const token = req.params.file.match(/^([A-Za-z0-9_-]{32}).mp4$/)?.[1];
+    const video = token ? store.videoForOpenMediaLink(token) : null;
+    if (!video) return res.status(404).type('text').send('Not found.');
+    res.set('Cache-Control', 'no-store');
+    res.sendFile(video.file_name, { root: videosDir, cacheControl: false });
+  });
 
   app.post('/api/posts', express.json({ limit: '1mb' }), (req, res) => {
     const { videoId, caption = '', publishNow = false, targets } = req.body ?? {};

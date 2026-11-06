@@ -25,7 +25,7 @@ const finishSignIn = (provider, state, options = stranger) => h.fetch(`/auth/${p
 test('making a link needs a login and a real platform', async () => {
   const person = await h.addUser('link-rules');
   assert.equal((await h.api('/api/connect-links', { ...stranger, method: 'POST', body: { provider: 'meta' } })).status, 401);
-  for (const provider of ['tiktok', 'constructor', '__proto__', null]) {
+  for (const provider of ['twitter', 'constructor', '__proto__', null]) {
     assert.equal((await h.api('/api/connect-links', { as: person.cookie, method: 'POST', body: { provider } })).status, 422, String(provider));
   }
 });

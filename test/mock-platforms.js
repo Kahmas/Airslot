@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 
-// A stand-in for the Meta and YouTube APIs, written from their documented request formats.
+// A stand-in for the Meta, YouTube, and TikTok APIs, written from their documented request formats.
 // It proves this app speaks that format; it cannot prove the real services still behave this way.
 export async function startMockPlatforms({ now = Date.now, processingPolls = 1 } = {}) {
   const state = {
@@ -16,6 +16,16 @@ export async function startMockPlatforms({ now = Date.now, processingPolls = 1 }
     lockYouTubePrivate: false,
     thumbnails: [],
     rejectCovers: false,
+    tiktok: {
+      issued: 1,
+      refreshToken: 'tt-refresh-1',
+      accessTokens: new Set(['tt-access-token']),
+      refreshCalls: 0,
+      shares: new Map(),
+      tooManyPending: false,
+      user: { open_id: 'tt-user-1', display_name: 'Akun TikTok' },
+      scope: 'user.info.basic,video.upload',
+    },
   };
   const failures = [];
 
@@ -289,6 +299,71 @@ export async function startMockPlatforms({ now = Date.now, processingPolls = 1 }
     send(res, 404, { error: { code: 404, message: `Unknown route ${req.method} ${pathname}` } });
   }
 
+  const tiktokOk = { code: 'ok', message: '', log_id: 'mock-log' };
+  const tiktokFail = (res, status, code, message) => send(res, status, { error: { code, message, log_id: 'mock-log' } });
+
+  async function handleTikTok(req, res, url, body, pathname) {
+    const tt = state.tiktok;
+    if (pathname === '/tiktok/v2/oauth/token/') {
+      const params = new URLSearchParams(body.toString());
+      if (params.get('client_key') !== 'test-key' || params.get('client_secret') !== 'test-secret') {
+        return send(res, 400, { error: 'invalid_client', error_description: 'Client key or secret is wrong.' });
+      }
+      if (params.get('grant_type') === 'refresh_token') {
+        tt.refreshCalls += 1;
+        if (params.get('refresh_token') !== tt.refreshToken) {
+          return send(res, 400, { error: 'invalid_grant', error_description: 'Refresh token is invalid or expired.' });
+        }
+      } else if (params.get('grant_type') !== 'authorization_code' || !params.get('redirect_uri')) {
+        return send(res, 400, { error: 'invalid_request', error_description: 'Bad grant.' });
+      }
+      // Every token answer replaces the refresh token, and the old one stops working.
+      tt.issued += 1;
+      tt.refreshToken = `tt-refresh-${tt.issued}`;
+      const access = `tt-access-${tt.issued}`;
+      tt.accessTokens.add(access);
+      return send(res, 200, {
+        access_token: access,
+        expires_in: 7200,
+        refresh_token: tt.refreshToken,
+        refresh_expires_in: 15552000,
+        open_id: tt.user.open_id,
+        scope: tt.scope,
+        token_type: 'Bearer',
+      });
+    }
+    const token = (req.headers.authorization ?? '').split(' ')[1];
+    if (!tt.accessTokens.has(token)) return tiktokFail(res, 401, 'access_token_invalid', 'The access token is invalid or not found in the request.');
+
+    if (pathname === '/tiktok/v2/user/info/' && req.method === 'GET') {
+      return send(res, 200, { data: { user: tt.user }, error: tiktokOk });
+    }
+    if (pathname === '/tiktok/v2/post/publish/inbox/video/init/' && req.method === 'POST') {
+      const source = JSON.parse(body.toString()).source_info ?? {};
+      if (source.source !== 'PULL_FROM_URL' || !source.video_url) return tiktokFail(res, 400, 'invalid_params', 'source_info is not valid.');
+      if (tt.tooManyPending) return tiktokFail(res, 403, 'spam_risk_too_many_pending_share', 'User has too many pending shares.');
+      // The real service fetches afterwards. Fetching here keeps the tests free of timing.
+      let bytes = 0;
+      try {
+        const fetched = await fetch(source.video_url, { redirect: 'manual' });
+        if (fetched.status === 200) bytes = (await fetched.arrayBuffer()).byteLength;
+      } catch {
+        bytes = 0;
+      }
+      const publishId = `v_inbox_url~v2.${tt.shares.size + 1}`;
+      tt.shares.set(publishId, { videoUrl: source.video_url, bytes, polls: 0, status: bytes ? null : 'FAILED', failReason: bytes ? null : 'video_pull_failed' });
+      return send(res, 200, { data: { publish_id: publishId }, error: tiktokOk });
+    }
+    if (pathname === '/tiktok/v2/post/publish/status/fetch/' && req.method === 'POST') {
+      const share = tt.shares.get(JSON.parse(body.toString()).publish_id);
+      if (!share) return tiktokFail(res, 400, 'invalid_publish_id', 'publish_id is not valid.');
+      share.polls += 1;
+      const status = share.status ?? (share.polls > 1 ? 'SEND_TO_USER_INBOX' : 'PROCESSING_DOWNLOAD');
+      return send(res, 200, { data: { status, ...(share.failReason ? { fail_reason: share.failReason } : {}), downloaded_bytes: share.bytes }, error: tiktokOk });
+    }
+    tiktokFail(res, 404, 'not_found', `Unknown route ${req.method} ${pathname}`);
+  }
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://mock');
     const body = await readBody(req);
@@ -301,6 +376,7 @@ export async function startMockPlatforms({ now = Date.now, processingPolls = 1 }
       const rupload = url.pathname.match(/^\/(ig-api-upload|video-upload)\/v[\d.]+\/([^/]+)$/);
       if (rupload) return handleRupload(req, target, rupload[1], rupload[2], body);
       if (url.pathname === '/dialog') return send(target, 200, { dialog: true });
+      if (url.pathname.startsWith('/tiktok/')) return handleTikTok(req, target, url, body, url.pathname);
       handleYouTube(req, target, url, body, url.pathname);
     };
 
@@ -332,6 +408,8 @@ export async function startMockPlatforms({ now = Date.now, processingPolls = 1 }
       config.google.tokenUrl = `${mock.url}/token`;
       config.google.apiUrl = `${mock.url}/youtube/v3`;
       config.google.uploadUrl = `${mock.url}/upload/youtube/v3`;
+      config.tiktok.authUrl = `${mock.url}/dialog`;
+      config.tiktok.apiUrl = `${mock.url}/tiktok`;
       return config;
     },
   };

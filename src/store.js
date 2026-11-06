@@ -351,8 +351,14 @@ export function createStore(dbPath, vault, now = Date.now) {
       return openAccount(db.prepare('SELECT * FROM accounts WHERE id = ? AND user_id = ?').get(id, userId));
     },
 
-    saveAccessToken(id, token, expiresAt) {
-      db.prepare('UPDATE accounts SET token = ?, token_expires_at = ? WHERE id = ?').run(vault.seal(token), expiresAt, id);
+    // TikTok hands out a new refresh token with every access token, so that one is saved too when given.
+    saveAccessToken(id, token, expiresAt, refreshToken = null) {
+      if (refreshToken) {
+        db.prepare('UPDATE accounts SET token = ?, token_expires_at = ?, refresh_token = ? WHERE id = ?')
+          .run(vault.seal(token), expiresAt, vault.seal(refreshToken), id);
+      } else {
+        db.prepare('UPDATE accounts SET token = ?, token_expires_at = ? WHERE id = ?').run(vault.seal(token), expiresAt, id);
+      }
     },
 
     markNeedsReconnect(id) {
@@ -404,6 +410,17 @@ export function createStore(dbPath, vault, now = Date.now) {
         JOIN posts p ON p.video_id = v.id
         JOIN targets t ON t.post_id = p.id
         WHERE v.cover_token = ? AND v.has_cover = 1 AND t.platform = 'instagram' AND t.status IN (${ACTIVE_SQL})
+        LIMIT 1
+      `).get(token) ?? null;
+    },
+
+    // TikTok fetches the video itself. Its link works only while that send is still under way.
+    videoForOpenMediaLink(token) {
+      return db.prepare(`
+        SELECT v.file_name FROM targets t
+        JOIN posts p ON p.id = t.post_id
+        JOIN videos v ON v.id = p.video_id
+        WHERE t.platform = 'tiktok' AND t.status IN ('waiting', 'processing') AND json_extract(t.stage, '$.mediaToken') = ?
         LIMIT 1
       `).get(token) ?? null;
     },

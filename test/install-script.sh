@@ -161,6 +161,7 @@ check "update succeeds without --base-url" '[ "$(rc)" = 0 ]'
 check "password unchanged" '[ "$(sed -n "s/^APP_PASSWORD=//p" "$P/etc/airslot/airslot.env")" = "$PW" ]'
 check "port unchanged though it is in use by itself" 'grep -q "^PORT=3181$" "$P/etc/airslot/airslot.env"'
 check "keys unchanged" 'grep -q "^META_APP_ID=123$" "$P/etc/airslot/airslot.env"'
+check "TikTok lines are there once" '[ "$(grep -c "^TIKTOK_CLIENT_KEY=$" "$P/etc/airslot/airslot.env")" = 1 ] && [ "$(grep -c "^TIKTOK_CLIENT_SECRET=$" "$P/etc/airslot/airslot.env")" = 1 ]'
 check "data unchanged" '[ "$(cat "$P/var/lib/airslot/videos/clip.mp4")" = keep ]'
 check "Node not downloaded again" '! grep -q "^curl" "$FAKE/log"'
 check "user not recreated" '! grep -q "^useradd" "$FAKE/log"'
@@ -206,6 +207,7 @@ run "$Q" --base-url https://a.example.com
 sed -i '/^SITE_/d' "$Q/etc/airslot/airslot.env"
 run "$Q" --site-host added.example.com --contact-email a@example.com
 check "settings are added to an older install" 'grep -q "^SITE_HOST=added.example.com$" "$Q/etc/airslot/airslot.env"'
+check "an older install gains the TikTok lines" 'grep -q "^TIKTOK_CLIENT_KEY=$" "$Q/etc/airslot/airslot.env"'
 run "$P" --site-host "bad host|x"
 check "a bad hostname is refused" '[ "$(rc)" = 1 ] && out_has "plain hostname"'
 run "$P" --contact-email "a@b.co|x"

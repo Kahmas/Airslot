@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/Kahmas/Airslot/actions/workflows/test.yml/badge.svg)](https://github.com/Kahmas/Airslot/actions/workflows/test.yml)
 
-Schedule one vertical video to Instagram Reels, Facebook Reels, and YouTube Shorts with one click. TikTok is not included yet.
+Schedule one vertical video to Instagram Reels, Facebook Reels, and YouTube Shorts with one click. TikTok gets the video as a draft in its inbox at the publish time, and you post it from the TikTok app.
 
 People sign up with an invite code, a username, and a password, and each person only sees their own accounts, videos, and posts.
 
@@ -43,7 +43,7 @@ The first account created becomes the admin. It takes over any data from before 
 |---|---|---|
 | `SIGNUP_OPEN=true` | Lets anyone sign up without an invite code | Off |
 | `USER_STORAGE_MB` | The default for how much video each person can keep, in MB. Admin accounts have no limit, and an admin can set a different limit per person on the Admin page. | 10240 |
-| `USER_ACCOUNT_LIMIT` | The default for how many accounts each person can connect. Each Facebook Page, Instagram account, and YouTube channel counts as one. Admin accounts have no limit, and an admin can set a different limit per person on the Admin page. | 3 |
+| `USER_ACCOUNT_LIMIT` | The default for how many accounts each person can connect. Each Facebook Page, Instagram account, YouTube channel, and TikTok account counts as one. Admin accounts have no limit, and an admin can set a different limit per person on the Admin page. | 3 |
 | `POST_RETENTION_DAYS` | Days after the publish time before a finished post and its video leave this server. Posts on the platforms are not touched. The privacy policy and terms state 7 days, so update them if you change this. | 7 |
 
 What the app does for you:
@@ -62,6 +62,7 @@ What the platforms require before other people can connect:
 - **Meta:** while the app is in Development, only people with a role on it can sign in, and Meta says test posts can only be seen by role users, so check a post from a logged-out browser. Add people as testers. Meta allows your employees or people who agreed to test on your behalf, and most apps can have up to 50. Letting anyone connect needs App Review for the five permissions and Business Verification.
 - **Google:** an unverified app can have up to 100 users in its lifetime, and everyone sees a warning. Verification removes both.
 - **YouTube:** uploads count against the whole Google project, so everyone on the server shares one allowance. The app stops new YouTube posts once 100 have been created in 24 hours.
+- **TikTok:** a sandbox works for up to 10 of your own accounts, added as target users. Anyone else can only connect after TikTok reviews the app, and TikTok decides whether it accepts a tool like this.
 
 ### Facebook and Instagram
 
@@ -97,6 +98,20 @@ The app requests the `youtube.force-ssl` scope, because that one scope covers up
 
 **Risk of videos locked as private.** Google's documentation disagrees with itself about API projects that haven't been audited: the [`videos.insert` reference](https://developers.google.com/youtube/v3/docs/videos/insert) says they aren't restricted, while the [YouTube help page](https://support.google.com/youtube/answer/7300965?hl=en) still describes videos locked as private with no appeal. If this happens, the Schedule page marks the post as failed, and the project needs to apply for a YouTube audit.
 
+### TikTok
+
+TikTok's [content sharing guidelines](https://developers.tiktok.com/doc/content-sharing-guidelines) don't accept tools for posting to your own or your team's accounts, and without their audit every video posted through the API stays private. So Airslot uses the other route TikTok offers, [upload to inbox](https://developers.tiktok.com/doc/content-posting-api-reference-upload-video): at the publish time the video arrives in the TikTok inbox as a draft, and the person posts it from the TikTok app. TikTok doesn't take a caption or cover this way, so the Schedule page has **Copy caption**, and the cover is chosen in TikTok. At most 5 drafts can wait in one inbox in 24 hours. A draft not posted within 3 days is marked failed, and Retry sends a new one.
+
+Steps in [TikTok for Developers](https://developers.tiktok.com) (the in-app Guide has them screen by screen under **Setup: TikTok**):
+
+1. Create an app for **Web**, with your website, terms, and privacy policy addresses.
+2. Add **Login Kit** with the redirect URI `http://localhost:3000/auth/tiktok/callback`, and **Content Posting API** without Direct Post. The scopes are `user.info.basic` and `video.upload`.
+3. Verify the domain of `BASE_URL` under **URL properties**. TikTok fetches each video from `BASE_URL/media/...`, a link that only works while that send is under way, and it only fetches from a verified address.
+4. Create a sandbox, add your TikTok accounts as target users, and copy its Client key and Client secret to `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET`.
+5. In this app, open **Accounts** and click **Connect TikTok**.
+
+TikTok replaces the refresh token every time the app renews access, so the app saves each new one and never renews one account twice at the same moment.
+
 ## First real test
 
 Schedule one test video about 20 minutes ahead, then check:
@@ -114,6 +129,7 @@ If something fails, the platform's message appears on the Schedule page and in t
 | Instagram | 15 minutes before the publish time, then published on time | Doesn't go out |
 | Facebook | Right after scheduling, using Facebook's own scheduler (up to 29 days ahead) | Still goes out, unless it was scheduled less than 11 minutes ahead |
 | YouTube | A day before the publish time (right away if sooner), using YouTube's own scheduler | Still goes out, if the app was on when the upload was due |
+| TikTok | At the publish time, as a draft in the TikTok inbox | Arrives once the app is back, or is marked Missed after 2 hours |
 
 New post can also **Publish now**. The video then goes to each platform right away and goes live once that platform has processed it. There is no earlier stage to cancel on YouTube, because the video goes public as soon as it is ready.
 
@@ -233,7 +249,7 @@ Both run on GitHub Actions for every push.
 | Path | What it holds |
 |---|---|
 | `src/` | The server: login, uploads, covers, scheduling, and admin |
-| `src/platforms/` | How videos reach Instagram, Facebook, and YouTube |
+| `src/platforms/` | How videos reach Instagram, Facebook, YouTube, and TikTok |
 | `public/` | The app's pages, with no build step |
 | `site/` | The public home page, privacy policy, and terms |
 | `deploy/` | The Ubuntu install script |

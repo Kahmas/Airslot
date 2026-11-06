@@ -198,6 +198,8 @@ META_APP_SECRET=
 META_CONFIG_ID=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
 EOF
     )
     good "Settings created with a random setup code"
@@ -205,6 +207,11 @@ EOF
     if [ -n "$BASE_URL" ]; then sed -i "s|^BASE_URL=.*|BASE_URL=$BASE_URL|" "$ENV_FILE"; fi
     good "Existing settings kept"
   fi
+  # Settings added in later versions appear empty, so the guide's "type after the equals sign" works.
+  local key
+  for key in TIKTOK_CLIENT_KEY TIKTOK_CLIENT_SECRET; do
+    grep -q "^$key=" "$ENV_FILE" || printf '%s=\n' "$key" >>"$ENV_FILE"
+  done
   if [ -n "$SITE_HOST" ]; then set_setting SITE_HOST "$SITE_HOST"; fi
   if [ -n "$CONTACT_EMAIL" ]; then set_setting SITE_CONTACT_EMAIL "$CONTACT_EMAIL"; fi
   chmod 600 "$ENV_FILE"

@@ -117,7 +117,7 @@ export function viewAdmin(view, ui) {
 
   const askAccountLimit = (person) => askLimit({
     title: `Account limit for ${person.username}`,
-    text: `They have ${plural(person.accountCount, 'account')} connected. Each Facebook Page, Instagram account, and YouTube channel counts as one. A lower limit keeps what is connected and only stops new ones.`,
+    text: `They have ${plural(person.accountCount, 'account')} connected. Each Facebook Page, Instagram account, YouTube channel, and TikTok account counts as one. A lower limit keeps what is connected and only stops new ones.`,
     label: 'Number of accounts',
     hint: `Leave empty to use the default of ${data.defaultAccountLimit}.`,
     value: person.customAccountLimit ? String(person.accountLimit) : '',

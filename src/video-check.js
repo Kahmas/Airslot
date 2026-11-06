@@ -125,8 +125,22 @@ function checkYouTube(info) {
   return issues;
 }
 
+// From TikTok's media transfer guide. Some accounts may only post 3 or 5 minutes, which TikTok checks itself.
+function checkTikTok(info) {
+  const issues = [];
+  if (!['mp4', 'matroska'].includes(info.container)) issues.push({ level: 'error', text: 'TikTok only accepts MP4, MOV, or WebM.' });
+  if (!['h264', 'hevc', 'vp8', 'vp9'].includes(info.videoCodec)) issues.push({ level: 'error', text: `Video codec ${info.videoCodec} isn't supported. Use H.264.` });
+  if (info.durationSec > 600) issues.push({ level: 'error', text: `Length of ${formatSeconds(info.durationSec)} is over TikTok's 10-minute limit.` });
+  if (info.fps && (info.fps < 23 || info.fps > 60)) issues.push({ level: 'error', text: `Frame rate of ${info.fps.toFixed(1)} fps is outside the 23 to 60 fps range.` });
+  if (Math.min(info.width, info.height) < 360 || Math.max(info.width, info.height) > 4096) {
+    issues.push({ level: 'error', text: `Resolution of ${ratioLabel(info)} is outside TikTok's 360 to 4096 pixel range.` });
+  }
+  if (info.durationSec > 180) issues.push({ level: 'warn', text: 'Some TikTok accounts can only post up to 3 or 5 minutes.' });
+  return issues;
+}
+
 export function checkVideo(info) {
-  const result = { instagram: checkInstagram(info), facebook: checkFacebook(info), youtube: checkYouTube(info) };
+  const result = { instagram: checkInstagram(info), facebook: checkFacebook(info), youtube: checkYouTube(info), tiktok: checkTikTok(info) };
   return Object.fromEntries(Object.entries(result).map(([platform, issues]) => [
     platform,
     { ok: !issues.some((issue) => issue.level === 'error'), issues },

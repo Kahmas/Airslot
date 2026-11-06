@@ -47,6 +47,8 @@ export async function startHarness({ processingPolls = 1, appPassword = null, si
   config.google.clientSecret = 'test-secret';
   config.meta.appId = 'test-app';
   config.meta.appSecret = 'test-secret';
+  config.tiktok.clientKey = 'test-key';
+  config.tiktok.clientSecret = 'test-secret';
   config.appPassword = appPassword;
   if (site) config.site = site;
   // Small enough that the sample videos really do travel in several pieces.

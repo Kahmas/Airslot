@@ -27,7 +27,7 @@ export function loadConfig(env = process.env) {
       perUserBytes: Number(env.USER_STORAGE_MB ?? 10240) * 1024 * 1024,
     },
     accounts: {
-      // Each Facebook Page, Instagram account, and YouTube channel counts as one.
+      // Each Facebook Page, Instagram account, YouTube channel, and TikTok account counts as one.
       perUser: Number(env.USER_ACCOUNT_LIMIT ?? 3),
     },
     retention: {
@@ -67,6 +67,12 @@ export function loadConfig(env = process.env) {
       tokenUrl: 'https://oauth2.googleapis.com/token',
       apiUrl: 'https://www.googleapis.com/youtube/v3',
       uploadUrl: 'https://www.googleapis.com/upload/youtube/v3',
+    },
+    tiktok: {
+      clientKey: env.TIKTOK_CLIENT_KEY || null,
+      clientSecret: env.TIKTOK_CLIENT_SECRET || null,
+      authUrl: 'https://www.tiktok.com/v2/auth/authorize/',
+      apiUrl: 'https://open.tiktokapis.com',
     },
     schedule: {
       tickMs: 15_000,

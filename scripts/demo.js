@@ -27,5 +27,14 @@ app.store.upsertAccount({
   refresh_token: 'demo-refresh',
   token_expires_at: Date.UTC(year, 0, 1),
 });
+app.store.upsertAccount({
+  userId,
+  platform: 'tiktok',
+  remote_id: 'tt-demo',
+  name: 'Demo TikTok',
+  token: 'tt-access-token',
+  refresh_token: 'tt-refresh-1',
+  token_expires_at: Date.UTC(year, 0, 1),
+});
 
 console.log(`Demo mode is running at ${config.baseUrl}. Log in with demo / demo-password. Nothing is actually posted.`);

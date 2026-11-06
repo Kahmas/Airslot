@@ -10,6 +10,7 @@ const PLATFORMS = {
   instagram: { name: 'Instagram', mark: 'IG' },
   facebook: { name: 'Facebook', mark: 'FB' },
   youtube: { name: 'YouTube', mark: 'YT' },
+  tiktok: { name: 'TikTok', mark: 'TT' },
 };
 const POLL_MS = 10_000;
 const IG_CAPTION_LIMIT = 2200;
@@ -387,6 +388,10 @@ function renderDestination(account, refreshAction) {
         'This video is made for kids'),
     );
   }
+  if (account.platform === 'tiktok') {
+    extras.push(h('p', { class: 'field-hint' },
+      'At the publish time this goes to your TikTok inbox as a draft. Open the notification in the TikTok app, paste the caption, choose the cover, and post it there.'));
+  }
   const custom = draft.captions[account.id];
   extras.push(h('details', { open: custom != null },
     h('summary', {}, account.platform === 'youtube' ? 'Custom YouTube description' : `Custom ${platform.name} caption`),
@@ -644,12 +649,27 @@ const STATUS = {
 const ACTIVE = new Set(['waiting', 'uploading', 'processing', 'ready', 'handed_off']);
 const NEEDS_ACTION = new Set(['failed', 'missed']);
 
+// TikTok only takes drafts, which the person posts from the TikTok app.
+function tiktokDetail(target) {
+  switch (target.status) {
+    case 'waiting':
+      return target.nextRunAt > Date.now() ? `Goes to your TikTok inbox ${formatWhen(target.nextRunAt)}.` : 'Sending to your TikTok inbox shortly.';
+    case 'processing':
+      return 'TikTok is fetching the video.';
+    case 'handed_off':
+      return 'In your TikTok inbox. Open the notification in the TikTok app, paste the caption, and post it.';
+    default:
+      return null;
+  }
+}
+
 function targetDetail(target) {
   const platform = PLATFORMS[target.platform].name;
   if (NEEDS_ACTION.has(target.status)) return target.error;
   if (target.error && ACTIVE.has(target.status)) {
     return `Temporary problem, retrying at ${target.nextRunAt ? formatTime(target.nextRunAt) : 'any moment'}. ${target.error}`;
   }
+  if (target.platform === 'tiktok') return tiktokDetail(target);
   switch (target.status) {
     case 'waiting':
       return target.nextRunAt > Date.now() ? `Uploads to ${platform} ${formatWhen(target.nextRunAt)}.` : 'Uploading shortly.';
@@ -676,7 +696,8 @@ async function targetAction(path, successText) {
 
 function renderTarget(target) {
   const retrying = target.error && ACTIVE.has(target.status);
-  const status = retrying ? { label: 'Retrying', tone: 'warn' } : STATUS[target.status];
+  const inInbox = target.platform === 'tiktok' && target.status === 'handed_off';
+  const status = retrying ? { label: 'Retrying', tone: 'warn' } : inInbox ? { label: 'In inbox', tone: 'active' } : STATUS[target.status];
   const detail = targetDetail(target);
   const platform = PLATFORMS[target.platform].name;
   const label = `${platform} ${target.accountName}`;
@@ -694,6 +715,13 @@ function renderTarget(target) {
         'aria-label': `${target.status === 'missed' ? 'Publish now' : 'Retry'} on ${label}`,
         onclick: () => targetAction(`/api/targets/${target.id}/retry`, `Running ${label} again.`),
       }, target.status === 'missed' ? 'Publish now' : 'Retry'),
+      inInbox && target.caption && h('button', {
+        class: 'btn btn-secondary btn-small',
+        type: 'button',
+        'data-focus-key': `copy-${target.id}`,
+        'aria-label': `Copy the caption for ${label}`,
+        onclick: (event) => copyText(target.caption, event.currentTarget, toast),
+      }, 'Copy caption'),
       ACTIVE.has(target.status) && h('button', {
         class: 'btn btn-danger btn-small',
         type: 'button',
@@ -702,9 +730,11 @@ function renderTarget(target) {
         onclick: async () => {
           const ok = await confirmAction({
             title: `Cancel the ${platform} post?`,
-            text: target.status === 'handed_off'
-              ? `The video already waiting on ${platform} will be deleted from there.`
-              : 'This video will not go out on that account.',
+            text: inInbox
+              ? "Airslot stops tracking it. TikTok can't take a draft back, so delete it from your TikTok inbox if you don't want it."
+              : target.status === 'handed_off'
+                ? `The video already waiting on ${platform} will be deleted from there.`
+                : 'This video will not go out on that account.',
             okLabel: 'Cancel post',
           });
           if (ok) targetAction(`/api/targets/${target.id}/cancel`, `Canceled the post on ${label}.`);
@@ -954,7 +984,7 @@ function viewSchedule() {
 
 /* ---------- Accounts ---------- */
 
-const CONNECT_URLS = { facebook: '/auth/meta/start', instagram: '/auth/meta/start', youtube: '/auth/google/start' };
+const CONNECT_URLS = { facebook: '/auth/meta/start', instagram: '/auth/meta/start', youtube: '/auth/google/start', tiktok: '/auth/tiktok/start' };
 
 function renderAccountRow(account) {
   const platform = PLATFORMS[account.platform].name;
@@ -1098,6 +1128,17 @@ function viewAccounts() {
         connectLabel: 'Connect a YouTube channel',
         addLabel: 'Add another channel',
         guide: '#/guide/youtube',
+      }),
+      renderAccountGroup({
+        title: 'TikTok',
+        note: 'No TikTok account connected yet. TikTok gets drafts in its inbox, which you post from the TikTok app.',
+        platforms: ['tiktok'],
+        configured: appState.connect.tiktok,
+        provider: 'tiktok',
+        startUrl: '/auth/tiktok/start',
+        connectLabel: 'Connect TikTok',
+        addLabel: 'Add another account',
+        guide: '#/guide/tiktok',
       })),
   );
   return stopAccountsWatch;

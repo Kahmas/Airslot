@@ -6,12 +6,14 @@ import { copyText } from './clipboard.js';
 const SECTIONS = {
   meta: 'Facebook & Instagram',
   youtube: 'YouTube',
+  tiktok: 'TikTok',
   problems: 'Problems',
 };
 
 const ADMIN_SECTIONS = {
   'setup-meta': 'Setup: Meta',
   'setup-google': 'Setup: Google',
+  'setup-tiktok': 'Setup: TikTok',
 };
 
 const META_PERMISSIONS = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'instagram_basic', 'instagram_content_publish'];
@@ -90,7 +92,7 @@ export function viewGuide(view, sub, { h, appState, toast }) {
 
   function limitNote() {
     if (appState.accountLimit == null) return null;
-    return note(b(`Your limit is ${appState.accountLimit} ${appState.accountLimit === 1 ? 'account' : 'accounts'}, and you have ${appState.accounts.length} connected. `), 'Each Facebook Page, Instagram account, and YouTube channel counts as one. Your admin can raise it.');
+    return note(b(`Your limit is ${appState.accountLimit} ${appState.accountLimit === 1 ? 'account' : 'accounts'}, and you have ${appState.accounts.length} connected. `), 'Each Facebook Page, Instagram account, YouTube channel, and TikTok account counts as one. Your admin can raise it.');
   }
 
   function connectAction(configured, url, label, setupSection) {
@@ -332,6 +334,155 @@ export function viewGuide(view, sub, { h, appState, toast }) {
     ]);
   }
 
+  function tiktokGuide() {
+    return guidePage([
+      statusLine(['tiktok'], appState.connect.tiktok),
+      note("TikTok works differently from the others. It doesn't let apps like Airslot post for you, so Airslot sends the video to your TikTok inbox as a draft at the publish time, and you post it from the TikTok app. Menu names on TikTok change from time to time, so yours may differ slightly."),
+      profileNote(),
+      beforeYouStart(
+        sub3('Have this ready'),
+        bullets(
+          'The TikTok account you want to post to, logged in on the TikTok app on your phone.',
+          'The same account logged in on tiktok.com in this browser profile, or in the profile you will paste a link into.',
+        )),
+    ], [
+      {
+        title: 'Connect',
+        intro: 'TikTok asks you to log in and allow Airslot to send videos.',
+        body: [
+          h('p', { class: 'part-action' }, connectAction(appState.connect.tiktok, '/auth/tiktok/start', 'Connect TikTok', 'setup-tiktok')),
+          steps(
+            'Click the button above. TikTok opens its own page.',
+            'Log in if it asks, and check the account name it shows is the one you want.',
+            ['Allow every permission it lists, then click ', b('Continue'), ' or ', b('Authorize'), '. Airslot needs to read your account name and send videos to your inbox.'],
+            'TikTok sends you back to Airslot.',
+          ),
+          see('the message "Connected TikTok account" with your name, and the account on the ', h('a', { href: '#/accounts' }, 'Accounts page'), '.'),
+          ifSee('"permission to send videos"', 'a permission was left off. Connect again and allow all of them.'),
+          ifSee('an error from TikTok before you can log in', isAdmin ? 'while the TikTok app is in sandbox, only accounts added as target users can connect. See the Setup: TikTok guide.' : 'tell your admin. Your account may need to be added on the TikTok app first.'),
+        ],
+      },
+      {
+        title: 'Post a draft',
+        intro: 'The publish time is when the draft reaches your inbox. The video goes live when you post it.',
+        body: [
+          steps(
+            ['Open ', h('a', { href: '#/new' }, 'New post'), ', add your video, and turn on your TikTok account.'],
+            "Write the caption. TikTok doesn't take a caption from apps, so you will paste it in the TikTok app.",
+            'Schedule it, or choose Publish now.',
+            ['At the publish time, the Schedule page shows ', b('In inbox'), ' for TikTok, and a notification arrives in the TikTok app.'],
+            ['On the Schedule page, click ', b('Copy caption'), '. To use it on your phone, open Airslot on the phone and copy it there.'],
+            'In the TikTok app, open the notification. The video opens in the TikTok editor.',
+            'Paste the caption, choose the cover, sound, and who can watch it, then post it.',
+          ),
+          see(b('Published'), ' on the Schedule page within about 10 minutes of posting.'),
+          note(b('Limits: '), 'TikTok allows at most 5 drafts waiting in your inbox in 24 hours, so post or delete the ones there. A draft not posted within 3 days shows Failed in Airslot, and Retry sends it again.'),
+          note(b("The cover you chose in Airslot doesn't go to TikTok. "), 'Choose it again in the TikTok editor.'),
+        ],
+      },
+      {
+        title: 'Add another account',
+        intro: 'One Airslot login can hold several TikTok accounts.',
+        body: [
+          limitNote(),
+          steps(
+            'Log in to the other TikTok account on tiktok.com, in this browser profile or another one.',
+            ['If it is this profile, click ', b('Add another account'), ' in the TikTok part of the ', h('a', { href: '#/accounts' }, 'Accounts page'), '.'],
+            ['If it is another profile, click ', b('Use another browser profile'), ' instead. Paste the link there, check the Airslot username, and click ', b('Continue'), '.',
+              dont('continue if the link came from someone else.')],
+          ),
+          see('both TikTok accounts on the Accounts page. Each draft goes to the inbox of the account you turned on, so that account has to be logged in on the TikTok app to post it.'),
+        ],
+      },
+    ]);
+  }
+
+  function setupTikTokGuide() {
+    const site = appState.siteHost;
+    const base = new URL(appState.baseUrl);
+    return guidePage([
+      note("Only an admin does this, once. It creates the TikTok app that everyone on this server connects through. These steps follow TikTok's developer documentation, and its pages change from time to time, so yours may differ slightly."),
+      beforeYouStart(
+        sub3('Have these ready'),
+        bullets(
+          'A TikTok account to log in to TikTok for Developers.',
+          'An app icon, 1024 by 1024 pixels, as JPG or PNG.',
+          'Access to the DNS of your domain, to prove you own it.',
+          'Access to the server, to save the keys.',
+        )),
+    ], [
+      {
+        title: 'Create the app',
+        intro: null,
+        body: steps(
+          ['Open TikTok for Developers and log in:', pageRow('https://developers.tiktok.com', 'TikTok for Developers')],
+          ['Open ', b('Manage apps'), ' and create a new app named ', b('Airslot'), '.'],
+          'Upload the icon and write a short description. People see both on the TikTok permission page.',
+          ['Under platforms, choose ', b('Web'), '.'],
+          site
+            ? ['Fill in these addresses:',
+              h('dl', { class: 'keys' },
+                h('dt', {}, 'Web or Desktop URL'), h('dd', {}, copyRow(`https://${site}`, 'the website address')),
+                h('dt', {}, 'Terms of Service URL'), h('dd', {}, copyRow(`https://${site}/terms`, 'the terms address')),
+                h('dt', {}, 'Privacy Policy URL'), h('dd', {}, copyRow(`https://${site}/privacy`, 'the privacy policy address')))]
+            : note(b('The public pages are not switched on yet. '), 'TikTok needs a website, terms, and privacy policy anyone can open. Use the "Public home page and privacy policy" steps in README.md.'),
+        ),
+      },
+      {
+        title: 'Add Login Kit and Content Posting',
+        intro: null,
+        body: steps(
+          ['Click ', b('Add products'), ' and add ', b('Login Kit'), '.'],
+          ['Under Login Kit, add this as the Redirect URI:', copyRow(`${appState.baseUrl}/auth/tiktok/callback`, 'the TikTok redirect address')],
+          ['Add ', b('Content Posting API'), ' as well.', dont('turn on Direct Post. Airslot only sends drafts, and Direct Post needs an audit TikTok only gives to apps for the public.')],
+          ['Under ', b('Scopes'), ', check that ', b('user.info.basic'), ' and ', b('video.upload'), ' are there.'],
+        ),
+      },
+      {
+        title: 'Verify your domain',
+        intro: 'TikTok fetches each video from this server, and only from an address it knows is yours.',
+        body: [
+          steps(
+            ['Click ', b('URL properties'), ', then ', b('Verify properties'), '.'],
+            ['Choose verification by ', b('Domain'), ' and enter:', copyRow(site ?? base.hostname, 'the domain')],
+            'TikTok shows a text value. Add it to your DNS as a TXT record. On Cloudflare, that is DNS, then Records, then Add record.',
+            ['Wait a few minutes, then click ', b('Verify'), '.'],
+          ),
+          note('A verified domain also covers its subdomains, so this one covers ', b(base.hostname), ' and the website addresses from Part 1.'),
+        ],
+      },
+      {
+        title: 'Use the sandbox',
+        intro: 'A sandbox works without TikTok reviewing the app, for up to 10 of your own TikTok accounts.',
+        body: [
+          steps(
+            ['Create a ', b('Sandbox'), ' and give it the same products, scopes, and addresses as Parts 2 and 3.'],
+            ['Add each TikTok account you will post to as a ', b('target user'), '. TikTok asks you to log in to that account on its own page.'],
+            ["Keep the sandbox's ", b('Client key'), ' and ', b('Client secret'), ' for the next part.'],
+          ),
+          note(b('For other people: '), "accounts that aren't target users can only connect after TikTok approves the app. Submit it for review with a demo video of the whole flow and an explanation of each scope. TikTok decides whether it accepts a tool like this."),
+        ],
+      },
+      {
+        title: 'Put the keys on the server',
+        intro: 'You now have two values to add.',
+        body: serverKeys([
+          ['TIKTOK_CLIENT_KEY', ['The ', b('Client key'), ' from Part 4.']],
+          ['TIKTOK_CLIENT_SECRET', ['The ', b('Client secret'), ' from Part 4. This one is secret.']],
+        ]),
+      },
+      {
+        title: 'Connect your own account',
+        intro: null,
+        body: [
+          note('Follow the ', h('a', { href: '#/guide/tiktok' }, 'TikTok guide'), ' from Part 1, then send yourself one test draft.'),
+          ifSee('"redirect_uri" in an error from TikTok', 'the Redirect URI in Login Kit is different. Copy it from Part 2 again.'),
+          ifSee('"hasn\'t verified this server\'s address" on a post', 'Part 3 is not finished, or the sandbox has no verified domain.'),
+        ],
+      },
+    ]);
+  }
+
   function setupMetaGuide() {
     return guidePage([
       note("Only an admin does this, once. It creates the Meta app that everyone on this server connects through. Menu names on Meta's sites change from time to time, so yours may differ slightly."),
@@ -564,12 +715,14 @@ export function viewGuide(view, sub, { h, appState, toast }) {
         fix('A finished post is gone from the schedule', `Airslot removes finished posts and their videos ${appState.retentionDays} ${appState.retentionDays === 1 ? 'day' : 'days'} after their publish time, to save storage.`, 'Nothing changes on the platforms: posts that went live are still there. To post the video again, upload it again.'),
         fix('Retrying', 'A platform had a temporary problem.', 'Wait. Airslot tries a few more times, and shows Failed with the reason if it still does not work.'),
         fix("reached YouTube's daily upload limit", 'YouTube limits how many videos one channel can upload in about 24 hours. Videos uploaded in YouTube Studio count too.', 'Nothing to do. Airslot tries again every 3 hours until the publish time. If the time comes too close first, it shows Failed: click Retry the next day. A channel verified at youtube.com/verify gets a higher limit.'),
+        fix('at most 5 drafts waiting in your inbox', 'TikTok limits how many drafts can wait in one inbox in 24 hours.', 'Post or delete the drafts waiting in the TikTok app, then click Retry.'),
+        fix("wasn't posted from your TikTok inbox within 3 days", 'Airslot stops waiting for a TikTok draft after 3 days.', 'If the draft is still in your TikTok inbox, post it there. Otherwise click Retry to send a new one.'),
         fix('Missed', 'The publish time passed more than 2 hours ago while the post could not go out.', 'Click Publish now if you still want it, or Cancel if not.'),
         fix('YouTube is still holding the video as private', 'The Google project may need an audit by YouTube.', isAdmin ? 'Apply for the YouTube audit. The video can stay private until this is sorted out.' : 'Tell your admin. The video can stay private until this is sorted out.')),
       h('section', { class: 'card part' },
         h('h2', { class: 'card-title' }, 'Your Airslot account'),
         fix('Forgot your password', 'There is no email on your account to send a reset to.', 'Ask your admin to reset it, then change it on the Profile page.'),
-        fix('Your limit of ... left out', 'You have connected as many accounts as you are allowed. Each Facebook Page, Instagram account, and YouTube channel counts as one.', isAdmin ? 'Raise that person\'s limit on the Admin page.' : 'Disconnect an account you no longer use, or ask your admin for a higher limit.'),
+        fix('Your limit of ... left out', 'You have connected as many accounts as you are allowed. Each Facebook Page, Instagram account, YouTube channel, and TikTok account counts as one.', isAdmin ? 'Raise that person\'s limit on the Admin page.' : 'Disconnect an account you no longer use, or ask your admin for a higher limit.'),
         fix('That invite code is not valid', 'Each code works once, and an admin can remove one.', 'Ask your admin for a new code.'),
         fix('This account is turned off', 'An admin turned off your account.', 'Contact your admin.')),
     ];
@@ -578,9 +731,11 @@ export function viewGuide(view, sub, { h, appState, toast }) {
   const content = {
     meta: metaGuide,
     youtube: youtubeGuide,
+    tiktok: tiktokGuide,
     problems: problemsGuide,
     'setup-meta': setupMetaGuide,
     'setup-google': setupGoogleGuide,
+    'setup-tiktok': setupTikTokGuide,
   }[section]();
 
   view.replaceChildren(
