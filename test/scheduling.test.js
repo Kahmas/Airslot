@@ -358,6 +358,81 @@ test('an Instagram upload hiccup is retried without anyone pressing Retry, and g
   assert.equal(h.mock.state.published[0].at, air, 'still on time');
 }));
 
+test('an upload that arrived despite an error answer goes on to publish, the way it happened live', () => withHarness(async (h) => {
+  const air = h.clock.at + HOUR;
+  const id = await h.schedule({ platform: 'instagram', at: air });
+  // Instagram keeps the video but answers with an error, so the retry finds a container that takes no more uploads.
+  h.mock.failNext('POST /ig-api-upload', 400, UPLOAD_HICCUP, { lostResponse: true });
+
+  h.clock.at = air - 15 * MINUTE;
+  await h.settle();
+  assert.equal(h.target(id).status, 'uploading');
+  await h.advance(5 * MINUTE);
+  assert.notEqual(h.target(id).status, 'failed');
+
+  await h.advance(15 * MINUTE);
+  assert.equal(h.target(id).status, 'published');
+  assert.equal(h.mock.state.published.length, 1);
+  assert.equal(h.mock.state.containers.size, 1, 'no second container was needed');
+}));
+
+test('a target that failed this way before the fix works again with Retry', () => withHarness(async (h) => {
+  const air = h.clock.at + HOUR;
+  const id = await h.schedule({ platform: 'instagram', at: air });
+  h.clock.at = air - 15 * MINUTE;
+  await h.settle();
+  await h.advance(5 * MINUTE);
+  const [container] = [...h.mock.state.containers.values()];
+  assert.equal(container.status, 'FINISHED');
+
+  // How the live target was left: failed at the upload step, holding a container that already has the video.
+  h.store.patchTarget(id, { status: 'failed', stage: { containerId: [...h.mock.state.containers.keys()][0], failedFrom: 'uploading', restart: false }, next_run_at: null, error: 'not in the status to upload' });
+  assert.equal((await h.api(`/api/targets/${id}/retry`, { method: 'POST' })).status, 200);
+  await h.advance(15 * MINUTE);
+  assert.equal(h.target(id).status, 'published');
+}));
+
+test('after an unsure upload, a broken container gets one fresh start before anything fails', () => withHarness(async (h) => {
+  const air = h.clock.at + HOUR;
+  const id = await h.schedule({ platform: 'instagram', at: air });
+  h.mock.failNext('POST /ig-api-upload', 400, UPLOAD_HICCUP, { lostResponse: true });
+  h.clock.at = air - 15 * MINUTE;
+  await h.settle();
+  const [first] = [...h.mock.state.containers.values()];
+  first.status = 'ERROR';
+
+  await h.advance(10 * MINUTE);
+  assert.equal(h.mock.state.containers.size, 2, 'a second container was made');
+  await h.advance(10 * MINUTE);
+  assert.equal(h.target(id).status, 'published');
+}));
+
+test('a second broken container after a fresh start still ends in Failed', async () => {
+  // Processing never finishes on its own here, so each container's outcome is set by hand.
+  const h = await startHarness({ processingPolls: 1000 });
+  try {
+    const air = h.clock.at + HOUR;
+    const id = await h.schedule({ platform: 'instagram', at: air });
+    const breakAll = () => { for (const container of h.mock.state.containers.values()) container.status = 'ERROR'; };
+
+    h.mock.failNext('POST /ig-api-upload', 400, UPLOAD_HICCUP, { lostResponse: true });
+    h.clock.at = air - 15 * MINUTE;
+    await h.settle();
+    await h.advance(MINUTE);
+    breakAll();
+    await h.advance(2 * MINUTE);
+    assert.equal(h.mock.state.containers.size, 2, 'one fresh start');
+
+    breakAll();
+    await h.advance(5 * MINUTE);
+    assert.equal(h.target(id).status, 'failed');
+    assert.match(h.target(id).error, /rejected the video/);
+    assert.equal(h.mock.state.containers.size, 2, 'it does not keep making containers');
+  } finally {
+    await h.close();
+  }
+});
+
 test('an upload that keeps failing ends in Failed with the reason, after the retries', () => withHarness(async (h) => {
   const air = h.clock.at + 2 * HOUR;
   const id = await h.schedule({ platform: 'instagram', at: air });

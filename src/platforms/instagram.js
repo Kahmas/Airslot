@@ -3,6 +3,7 @@ import { AuthError, createGraph, PermanentError, restartError, ruploadFile } fro
 const POLL_MS = 60_000;
 const PROCESSING_TIMEOUT_MS = 20 * 60_000;
 const COVER_REFUSED = "Instagram didn't accept the cover, so it picked its own.";
+const ALREADY_UPLOADED = /not in the status to upload/i;
 
 // A frame needs only its position. An uploaded image has to be fetched by Instagram from a link.
 function coverParams(target, stage, ctx) {
@@ -12,7 +13,10 @@ function coverParams(target, stage, ctx) {
 }
 
 // What has to survive when a container is made again.
-const coverOutcome = ({ skipCover, coverNote }) => (skipCover ? { skipCover, coverNote } : {});
+const coverOutcome = ({ skipCover, coverNote, freshContainer }) => ({
+  ...(skipCover ? { skipCover, coverNote } : {}),
+  ...(freshContainer ? { freshContainer } : {}),
+});
 
 // The Instagram API can only publish immediately, so this app holds the schedule:
 // prepare the container shortly before air time, then publish it at air time.
@@ -60,13 +64,25 @@ export function createInstagram(config) {
           return { status: 'uploading', stage: { ...coverOutcome(stage), containerId: container.id }, next_run_at: now };
         }
         case 'uploading': {
-          await ruploadFile(`${ruploadUrl}/ig-api-upload/${version}/${stage.containerId}`, token, ctx.videoPath(target));
+          try {
+            await ruploadFile(`${ruploadUrl}/ig-api-upload/${version}/${stage.containerId}`, token, ctx.videoPath(target));
+          } catch (err) {
+            // Seen live: the first upload answered "Request processing failed" yet the video had arrived, so the
+            // retry was told the container no longer takes uploads. Processing then shows whether it worked.
+            if (!ALREADY_UPLOADED.test(err.message)) throw err;
+            return { status: 'processing', stage: { ...stage, uploadedAt: now, uploadUnsure: true }, next_run_at: now };
+          }
           return { status: 'processing', stage: { ...stage, uploadedAt: now }, next_run_at: now + POLL_MS };
         }
         case 'processing': {
           const container = await containerStatus(stage.containerId, token);
           if (container.status_code === 'FINISHED') return { status: 'ready', next_run_at: Math.max(now, target.publish_at) };
           if (container.status_code === 'EXPIRED') return { status: 'waiting', stage: coverOutcome(stage), next_run_at: now };
+          // After an upload we couldn't confirm, a broken or stuck container gets one fresh start before anything fails.
+          const stuck = now - stage.uploadedAt > PROCESSING_TIMEOUT_MS;
+          if (stage.uploadUnsure && !stage.freshContainer && (container.status_code === 'ERROR' || stuck)) {
+            return { status: 'waiting', stage: { ...coverOutcome(stage), freshContainer: true }, next_run_at: now };
+          }
           if (container.status_code === 'ERROR') {
             // Instagram doesn't say which part it refused, so a post with a cover gets one try without it.
             if (target.has_cover && !stage.skipCover) {

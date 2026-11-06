@@ -183,6 +183,16 @@ export async function startMockPlatforms({ now = Date.now, processingPolls = 1 }
     if (kind === 'ig-api-upload') {
       const container = state.containers.get(id);
       if (!container) return send(res, 404, { debug_info: { message: 'Unknown container' } });
+      // What Instagram answered live when a second upload reached a container that already had one.
+      if (container.status !== 'WAITING_UPLOAD') {
+        return send(res, 400, {
+          debug_info: {
+            retriable: false,
+            type: 'ProcessingFailedError',
+            message: JSON.stringify({ success: false, error: { message: 'The ig container is not in the status to upload a video' } }),
+          },
+        });
+      }
       container.bytes = fileSize;
       container.status = state.rejectCovers && (container.coverUrl || container.thumbOffset) ? 'ERROR' : 'IN_PROGRESS';
       return send(res, 200, { success: true, message: 'Upload successful.' });
