@@ -104,11 +104,12 @@ TikTok's [content sharing guidelines](https://developers.tiktok.com/doc/content-
 
 Steps in [TikTok for Developers](https://developers.tiktok.com) (the in-app Guide has them screen by screen under **Setup: TikTok**):
 
-1. Create an app for **Web**, with your website, terms, and privacy policy addresses.
-2. Add **Login Kit** with the redirect URI `http://localhost:3000/auth/tiktok/callback`, and **Content Posting API** without Direct Post. The scopes are `user.info.basic` and `video.upload`.
-3. Verify the domain of `BASE_URL` under **URL properties**. TikTok fetches each video from `BASE_URL/media/...`, a link that only works while that send is under way, and it only fetches from a verified address.
-4. Create a sandbox, add your TikTok accounts as target users, and copy its Client key and Client secret to `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET`.
-5. In this app, open **Accounts** and click **Connect TikTok**.
+1. Create an organization, then an app of the type **Other**.
+2. Verify your domain under **URL properties** with a DNS TXT record. TikTok fetches each video from `BASE_URL/media/...`, a link that only works while that send is under way, and it only fetches from a verified address. It also refuses terms and privacy addresses on an unverified domain.
+3. Create a sandbox and do everything else there. The Production side refuses to save until it has a review video, and that video has to be recorded with the sandbox.
+4. In the sandbox, fill in the app details for **Web**, add **Login Kit** with the redirect URI `http://localhost:3000/auth/tiktok/callback`, and add **Content Posting API** without Direct Post. The scopes `user.info.basic` and `video.upload` come with them.
+5. Add your TikTok accounts as target users, and copy the sandbox Client key and Client secret to `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET`.
+6. In this app, open **Accounts** and click **Connect TikTok**. A video arrives as a notification in the Inbox tab of the TikTok app, not under Drafts or in TikTok Studio.
 
 TikTok replaces the refresh token every time the app renews access, so the app saves each new one and never renews one account twice at the same moment.
 

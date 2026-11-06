@@ -23,7 +23,7 @@ const FAILURE_TEXT = {
 };
 
 const ERROR_TEXT = {
-  spam_risk_too_many_pending_share: 'TikTok allows at most 5 drafts waiting in your inbox in 24 hours. Post or delete the ones waiting in the TikTok app, then click Retry.',
+  spam_risk_too_many_pending_share: 'TikTok allows at most 5 drafts waiting in your inbox in 24 hours. Post the ones waiting in the Inbox tab of the TikTok app, then click Retry.',
   url_ownership_unverified: "TikTok hasn't verified this server's address yet. The admin has to verify the domain under URL properties in the TikTok app.",
   spam_risk_user_banned_from_posting: 'This TikTok account is not allowed to post right now.',
 };
