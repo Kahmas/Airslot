@@ -113,9 +113,11 @@ If something fails, the platform's message appears on the Schedule page and in t
 |---|---|---|
 | Instagram | 15 minutes before the publish time, then published on time | Doesn't go out |
 | Facebook | Right after scheduling, using Facebook's own scheduler (up to 29 days ahead) | Still goes out, unless it was scheduled less than 11 minutes ahead |
-| YouTube | Right after scheduling, using YouTube's own scheduler | Still goes out |
+| YouTube | A day before the publish time (right away if sooner), using YouTube's own scheduler | Still goes out, if the app was on when the upload was due |
 
 New post can also **Publish now**. The video then goes to each platform right away and goes live once that platform has processed it. There is no earlier stage to cancel on YouTube, because the video goes public as soon as it is ready.
+
+YouTube also limits how many videos one channel can upload in about 24 hours, Studio uploads included. Uploading a day ahead spreads a week of posts over the week. When the limit still hits, the app tries again every 3 hours and only shows **Failed** when the publish time would pass first.
 
 A post that is less than 2 hours late still goes out as soon as the app is back on. Beyond that it is marked **Missed** and waits for you to press **Publish now**, so content never goes out late without you knowing.
 

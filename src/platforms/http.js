@@ -3,6 +3,13 @@ import { openAsBlob } from 'node:fs';
 export class TransientError extends Error {}
 export class PermanentError extends Error {}
 export class AuthError extends PermanentError {}
+// A limit that lifts by itself, but only after hours. The scheduler tries again after waitMs.
+export class WaitError extends TransientError {
+  constructor(message, waitMs) {
+    super(message);
+    this.waitMs = waitMs;
+  }
+}
 
 // A failure that also voids the upload session, so a manual retry starts from the beginning.
 export function restartError(message) {
@@ -12,6 +19,8 @@ export function restartError(message) {
 }
 
 const API_TIMEOUT_MS = 60_000;
+const UPLOAD_LIMIT_WAIT_MS = 3 * 3_600_000;
+const UPLOAD_LIMIT_MESSAGE = "This channel reached YouTube's daily upload limit. It lifts within about 24 hours.";
 export const UPLOAD_TIMEOUT_MS = 2 * 3_600_000;
 
 const META_TRANSIENT_CODES = new Set([1, 2, 4, 17, 32, 613]);
@@ -66,6 +75,8 @@ function classifyResponse({ status, data, text }) {
   if (META_TEMPORARY_MESSAGES.some((pattern) => pattern.test(message))) return new TransientError(message);
   if (data?.debug_info?.retriable === true) return new TransientError(message);
   if (err?.is_transient || META_TRANSIENT_CODES.has(err?.code)) return new TransientError(message);
+  // A per-channel cap, separate from the project's quota. Attempts while it holds stay few, since each one may count.
+  if (err?.errors?.[0]?.reason === 'uploadLimitExceeded') return new WaitError(UPLOAD_LIMIT_MESSAGE, UPLOAD_LIMIT_WAIT_MS);
   if (GOOGLE_TRANSIENT_REASONS.has(err?.errors?.[0]?.reason)) return new TransientError(message);
   if (status === 429 || status >= 500) return new TransientError(message);
   return new PermanentError(message);

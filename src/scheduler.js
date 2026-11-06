@@ -1,6 +1,6 @@
 import { rmSync } from 'node:fs';
 import path from 'node:path';
-import { AuthError, PermanentError } from './platforms/http.js';
+import { AuthError, PermanentError, WaitError } from './platforms/http.js';
 import { coverFile, videoFiles } from './store.js';
 
 const MINUTE = 60_000;
@@ -63,6 +63,11 @@ export function createScheduler({ store, platforms, config, now = Date.now, log 
         fail(target, new PermanentError('Access to this account has expired. Reconnect it on the Accounts page, then retry.'));
       } else if (err instanceof PermanentError) {
         fail(target, err);
+      } else if (err instanceof WaitError) {
+        const retryAt = now() + err.waitMs;
+        // Waiting past the point where the post would be marked Missed only hides the reason.
+        if (retryAt > target.publish_at + missedGraceMs) fail(target, new PermanentError(`${err.message} Press Retry once it has lifted.`));
+        else store.patchTarget(target.id, { error: err.message, next_run_at: retryAt });
       } else if (target.attempts >= BACKOFF_MS.length) {
         fail(target, err);
       } else {

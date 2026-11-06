@@ -45,6 +45,8 @@ export function createYouTube(config) {
 
       switch (target.status) {
         case 'waiting': {
+          const startAt = target.publish_at - config.schedule.ytLeadMs;
+          if (now < startAt) return { next_run_at: startAt };
           const blob = await openVideo(ctx.videoPath(target));
           const response = await send(`${uploadUrl}/videos?uploadType=resumable&part=snippet,status`, {
             method: 'POST',

@@ -73,6 +73,8 @@ export function loadConfig(env = process.env) {
       concurrency: 3,
       // Instagram has no native scheduling, so the video is prepared shortly before air time.
       igLeadMs: 15 * MINUTE,
+      // YouTube caps uploads per channel per day, so videos go up a day ahead instead of all on the day they're scheduled.
+      ytLeadMs: 24 * 60 * MINUTE,
       // After this long past air time a post is flagged instead of going out unexpectedly late.
       missedGraceMs: 120 * MINUTE,
     },

@@ -189,6 +189,56 @@ test('YouTube uploads immediately with publishAt and becomes published after air
   assert.equal(h.target(id).status, 'published');
 }));
 
+test('YouTube scheduled days ahead uploads a day before its time, not all at once', () => withHarness(async (h) => {
+  const air = h.clock.at + 3 * DAY;
+  const id = await h.schedule({ platform: 'youtube', at: air });
+  await h.settle();
+  assert.equal(h.target(id).status, 'waiting');
+  assert.equal(h.target(id).next_run_at, air - DAY);
+  assert.equal(h.mock.state.videos.size, 0);
+
+  await h.advance(2 * DAY + MINUTE, HOUR);
+  assert.equal(h.target(id).status, 'handed_off');
+  const [video] = [...h.mock.state.videos.values()];
+  assert.equal(video.privacy, 'private');
+  assert.equal(video.publishAt, air);
+}));
+
+const uploadLimit = {
+  error: { code: 400, message: 'The user has exceeded the number of videos they may upload.', errors: [{ reason: 'uploadLimitExceeded' }] },
+};
+
+test("YouTube's daily upload limit is waited out without anyone pressing Retry", () => withHarness(async (h) => {
+  const air = h.clock.at + 20 * HOUR;
+  const id = await h.schedule({ platform: 'youtube', at: air });
+  // More refusals than the usual retries allow, so only the long wait gets it through.
+  for (let i = 0; i < 5; i += 1) h.mock.failNext('POST /upload/youtube', 400, uploadLimit);
+  await h.settle();
+  const waiting = h.target(id);
+  assert.equal(waiting.status, 'waiting');
+  assert.match(waiting.error, /daily upload limit/);
+  assert.equal(waiting.next_run_at, h.clock.at + 3 * HOUR);
+
+  await h.advance(16 * HOUR, 30 * MINUTE);
+  const target = h.target(id);
+  assert.equal(target.status, 'handed_off');
+  assert.equal(target.error, null);
+  assert.equal(h.mock.state.videos.size, 1);
+}));
+
+test('the upload limit close to the publish time fails with what to do, and Retry sends it', () => withHarness(async (h) => {
+  const id = await h.schedule({ platform: 'youtube', at: h.clock.at + 30 * MINUTE });
+  h.mock.failNext('POST /upload/youtube', 400, uploadLimit);
+  await h.settle();
+  const target = h.target(id);
+  assert.equal(target.status, 'failed');
+  assert.match(target.error, /daily upload limit.*Press Retry/);
+
+  assert.equal((await h.api(`/api/targets/${id}/retry`, { method: 'POST' })).status, 200);
+  await h.settle();
+  assert.equal(h.target(id).status, 'handed_off');
+}));
+
 test('YouTube locked as private is reported instead of silently marked live', () => withHarness(async (h) => {
   h.mock.state.lockYouTubePrivate = true;
   const air = h.clock.at + 30 * MINUTE;
