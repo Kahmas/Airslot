@@ -122,6 +122,44 @@ function showSecret({ title, text, value }) {
   dialog.showModal();
 }
 
+// A form in a dialog that stays open until the server accepts it, and shows the answer inside,
+// because a toast would sit behind the backdrop. It lives outside the page, so a refresh can't wipe it.
+function formDialog({ title, intro, fields, submitLabel, onSubmit }) {
+  const error = h('p', { class: 'form-error', role: 'alert', hidden: true });
+  const submit = h('button', { class: 'btn btn-primary', type: 'submit' }, submitLabel);
+  const dialog = h('dialog', { class: 'confirm form-dialog' });
+  dialog.append(h('form', {
+    novalidate: true,
+    // An old answer no longer applies once something changed.
+    oninput: () => { error.hidden = true; },
+    onsubmit: async (event) => {
+      event.preventDefault();
+      if (submit.disabled) return;
+      submit.disabled = true;
+      error.hidden = true;
+      try {
+        await onSubmit();
+        dialog.close();
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+      } finally {
+        submit.disabled = false;
+      }
+    },
+  },
+  h('h2', {}, title),
+  intro && h('p', {}, intro),
+  h('div', { class: 'form-dialog-fields' }, fields),
+  error,
+  h('div', { class: 'confirm-actions' },
+    h('button', { class: 'btn btn-secondary', type: 'button', onclick: () => dialog.close() }, 'Close'),
+    submit)));
+  dialog.addEventListener('close', () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 function statePanel(title, text, action, kind = '') {
   return h('section', { class: `card state ${kind}` },
     h('div', { class: 'state-tile', 'aria-hidden': 'true' }),
@@ -751,6 +789,114 @@ function nodeClass(post) {
   return 'node';
 }
 
+// What a change does on each platform, said before it is saved.
+function editEffects(post) {
+  const live = (platform) => post.targets.some((target) => target.platform === platform && target.status === 'handed_off');
+  return [
+    live('facebook') && 'Facebook: the scheduled reel is deleted there and sent again, because Facebook has no way to change it.',
+    live('youtube') && 'YouTube: the uploaded video is changed in place.',
+    live('tiktok') && 'TikTok: a video already in your inbox stays as it is. Copy caption gives the new caption.',
+  ].filter(Boolean);
+}
+
+function openEditPost(post) {
+  const youtube = post.targets.find((target) => target.platform === 'youtube' && target.status !== 'canceled');
+  const caption = h('textarea', { id: 'edit-caption', rows: 4, value: post.caption });
+  const title = youtube && h('input', { type: 'text', id: 'edit-title', maxLength: 100, value: youtube.title ?? '' });
+  const time = h('input', { type: 'datetime-local', id: 'edit-time', value: toLocalInput(post.publishAt) });
+  const effects = editEffects(post);
+
+  formDialog({
+    title: 'Edit post',
+    intro: null,
+    fields: [
+      h('div', { class: 'field' },
+        h('label', { htmlFor: 'edit-caption' }, 'Caption'),
+        caption,
+        h('span', { class: 'field-hint' }, 'An account that was given its own caption keeps it.')),
+      title && h('div', { class: 'field' },
+        h('label', { htmlFor: 'edit-title' }, 'YouTube title'),
+        title),
+      h('div', { class: 'field' },
+        h('label', { htmlFor: 'edit-time' }, 'Date and time'),
+        time,
+        h('span', { class: 'field-hint' }, `Your time zone, ${zone}.`)),
+      effects.length > 0 && h('ul', { class: 'form-dialog-notes' }, effects.map((text) => h('li', {}, text))),
+    ],
+    submitLabel: 'Save changes',
+    onSubmit: async () => {
+      const publishAt = time.value ? new Date(time.value).getTime() : NaN;
+      if (!Number.isFinite(publishAt)) throw new Error('Choose a date and time.');
+      const body = {};
+      if (caption.value !== post.caption) body.caption = caption.value;
+      if (title && title.value.trim() !== (youtube.title ?? '')) body.title = title.value;
+      // The field has no seconds, so an untouched time keeps the exact one already set.
+      if (toLocalInput(publishAt) !== toLocalInput(post.publishAt)) body.publishAt = publishAt;
+      if (Object.keys(body).length === 0) return;
+      await api(`/api/posts/${post.id}`, { method: 'PATCH', body });
+      toast(body.publishAt ? `Moved to ${formatWhen(body.publishAt)}.` : 'Saved.');
+      await loadSchedule();
+    },
+  });
+}
+
+// Connected accounts this post doesn't go to yet, including ones canceled from it.
+function addableAccounts(post) {
+  return appState.accounts.filter((account) => !post.targets.some((target) => target.accountId === account.id && target.status !== 'canceled'));
+}
+
+function openAddAccounts(post) {
+  const chosen = new Set();
+  const titleField = h('div', { class: 'field', hidden: true },
+    h('label', { htmlFor: 'add-title' }, 'YouTube title'),
+    h('input', { type: 'text', id: 'add-title', maxLength: 100, value: suggestedTitle(post.caption) }),
+    h('label', { class: 'check-row' }, h('input', { type: 'checkbox', id: 'add-kids' }), 'This video is made for kids'));
+  const byId = new Map(appState.accounts.map((account) => [account.id, account]));
+  const refresh = () => {
+    titleField.hidden = ![...chosen].some((id) => byId.get(id).platform === 'youtube');
+  };
+
+  const options = addableAccounts(post).map((account) => {
+    const check = post.video.checks?.[account.platform];
+    const blocked = account.needsReconnect ? 'Needs to be reconnected on the Accounts page.' : check && !check.ok ? check.issues.find((issue) => issue.level === 'error').text : null;
+    const id = `add-${account.id}`;
+    return h('div', { class: 'add-option' },
+      h('label', { class: `check-row ${blocked ? 'disabled' : ''}`, htmlFor: id },
+        h('input', {
+          type: 'checkbox',
+          id,
+          disabled: Boolean(blocked),
+          onchange: (event) => {
+            if (event.target.checked) chosen.add(account.id);
+            else chosen.delete(account.id);
+            refresh();
+          },
+        }),
+        platformMark(account.platform),
+        h('span', { class: 'dest-name' }, PLATFORMS[account.platform].name, h('small', {}, account.name))),
+      blocked && h('p', { class: 'add-note note-error' }, blocked));
+  });
+
+  formDialog({
+    title: 'Add accounts',
+    intro: `They get this video, caption, and cover at ${formatWhen(post.publishAt)}.`,
+    fields: [h('div', { class: 'add-options' }, options), titleField],
+    submitLabel: 'Add to post',
+    onSubmit: async () => {
+      if (chosen.size === 0) throw new Error('Choose at least one account.');
+      const title = document.getElementById('add-title').value;
+      const madeForKids = document.getElementById('add-kids').checked;
+      const targets = [...chosen].map((accountId) => ({
+        accountId,
+        ...(byId.get(accountId).platform === 'youtube' ? { title, madeForKids } : {}),
+      }));
+      await api(`/api/posts/${post.id}/targets`, { method: 'POST', body: { targets } });
+      toast(`Added ${plural(targets.length, 'account')}.`);
+      await loadSchedule();
+    },
+  });
+}
+
 function renderSlot(post, nowMs) {
   const settled = post.targets.every((target) => !ACTIVE.has(target.status));
   return h('article', { class: `slot ${post.publishAt < nowMs ? 'slot-past' : ''}` },
@@ -764,6 +910,21 @@ function renderSlot(post, nowMs) {
         h('p', { class: `slot-caption ${post.caption ? '' : 'empty'}` }, post.caption || 'No caption'),
         h('p', { class: 'slot-file' }, `${post.video.originalName}, ${formatDuration(post.video.durationSec)}`),
         h('ul', { class: 'target-list' }, post.targets.map(renderTarget)),
+        post.editable && h('div', { class: 'slot-actions' },
+          h('button', {
+            class: 'btn btn-secondary btn-small',
+            type: 'button',
+            'data-focus-key': `edit-${post.id}`,
+            'aria-label': `Edit the caption or time of ${post.video.originalName}`,
+            onclick: () => openEditPost(post),
+          }, 'Edit'),
+          addableAccounts(post).length > 0 && h('button', {
+            class: 'btn btn-secondary btn-small',
+            type: 'button',
+            'data-focus-key': `add-${post.id}`,
+            'aria-label': `Add accounts to ${post.video.originalName}`,
+            onclick: () => openAddAccounts(post),
+          }, 'Add accounts')),
         settled && h('p', { class: 'slot-remove' },
           h('span', { class: 'slot-expiry' }, `Removed from Airslot on ${shortDayFormat.format(Math.max(...post.targets.map((target) => target.publishAt)) + appState.retentionDays * 86_400_000)}.`),
           h('button', {

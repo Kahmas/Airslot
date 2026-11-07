@@ -93,7 +93,7 @@ const SCHEMA = `
 
 export const ACTIVE_STATUSES = ['waiting', 'uploading', 'processing', 'ready', 'handed_off'];
 const ACTIVE_SQL = ACTIVE_STATUSES.map((status) => `'${status}'`).join(',');
-const PATCHABLE = new Set(['status', 'stage', 'remote_id', 'remote_url', 'error', 'attempts', 'next_run_at', 'publish_at']);
+const PATCHABLE = new Set(['status', 'stage', 'remote_id', 'remote_url', 'error', 'attempts', 'next_run_at', 'publish_at', 'caption', 'title']);
 
 const TARGET_SELECT = `
   SELECT t.*, v.file_name, v.id AS video_id, v.has_cover, v.cover_offset_ms, v.cover_token, a.name AS account_name, p.user_id AS owner_id
@@ -181,6 +181,17 @@ export function createStore(dbPath, vault, now = Date.now) {
     } catch (err) {
       db.exec('ROLLBACK');
       throw err;
+    }
+  }
+
+  function insertTargets(postId, publishAt, targets) {
+    const stamp = now();
+    const insert = db.prepare(`
+      INSERT INTO targets (id, post_id, account_id, platform, caption, title, made_for_kids, publish_at, status, next_run_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?, ?)
+    `);
+    for (const target of targets) {
+      insert.run(randomUUID(), postId, target.accountId, target.platform, target.caption, target.title ?? null, target.madeForKids ? 1 : 0, publishAt, stamp, stamp);
     }
   }
 
@@ -438,19 +449,27 @@ export function createStore(dbPath, vault, now = Date.now) {
 
     createPost({ userId, videoId, caption, publishAt, targets }) {
       const postId = randomUUID();
-      const stamp = now();
       transaction(() => {
         db.prepare('INSERT INTO posts (id, user_id, video_id, caption, publish_at, created_at) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(postId, userId, videoId, caption, publishAt, stamp);
-        const insert = db.prepare(`
-          INSERT INTO targets (id, post_id, account_id, platform, caption, title, made_for_kids, publish_at, status, next_run_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?, ?)
-        `);
-        for (const target of targets) {
-          insert.run(randomUUID(), postId, target.accountId, target.platform, target.caption, target.title ?? null, target.madeForKids ? 1 : 0, publishAt, stamp, stamp);
-        }
+          .run(postId, userId, videoId, caption, publishAt, now());
+        insertTargets(postId, publishAt, targets);
       });
       return postId;
+    },
+
+    // Accounts added to a post that is already on the schedule go out at its publish time.
+    addTargets(postId, targets) {
+      const { publish_at: publishAt } = db.prepare('SELECT publish_at FROM posts WHERE id = ?').get(postId);
+      transaction(() => insertTargets(postId, publishAt, targets));
+    },
+
+    updatePost(id, { caption, publishAt }) {
+      db.prepare('UPDATE posts SET caption = ?, publish_at = ? WHERE id = ?').run(caption, publishAt, id);
+    },
+
+    // Every destination of one post, with what the scheduler needs to act on it.
+    postTargetsFull(postId) {
+      return db.prepare(`${TARGET_SELECT} WHERE t.post_id = ? ORDER BY t.platform, a.name`).all(postId).map(parseTarget);
     },
 
     listPosts(userId) {
@@ -534,11 +553,12 @@ export function createStore(dbPath, vault, now = Date.now) {
     },
 
     // Counts everything that has aired or will air within 24 hours of `at`, to respect platform caps.
-    countNear(accountId, at, windowMs) {
+    // A post being moved leaves itself out, since its old time is about to go.
+    countNear(accountId, at, windowMs, excludePostId = null) {
       return db.prepare(`
         SELECT COUNT(*) AS n FROM targets
-        WHERE account_id = ? AND status NOT IN ('failed', 'canceled', 'missed') AND ABS(publish_at - ?) < ?
-      `).get(accountId, at, windowMs).n;
+        WHERE account_id = ? AND status NOT IN ('failed', 'canceled', 'missed') AND ABS(publish_at - ?) < ? AND post_id IS NOT ?
+      `).get(accountId, at, windowMs, excludePostId).n;
     },
 
     // YouTube's upload allowance belongs to the whole Google project, so everyone here shares it.

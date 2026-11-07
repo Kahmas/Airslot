@@ -140,5 +140,10 @@ export function createTikTok(config) {
 
     // TikTok has no way to take a draft back out of someone's inbox, so canceling only stops the tracking here.
     async cancel() {},
+
+    // Before it is sent, the new time and caption simply apply. After, the caption only changes what Copy caption gives.
+    async edit(target, account, ctx) {
+      return { next_run_at: ctx.now() };
+    },
   };
 }

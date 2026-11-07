@@ -136,6 +136,20 @@ New post can also **Publish now**. The video then goes to each platform right aw
 
 YouTube also limits how many videos one channel can upload in about 24 hours, Studio uploads included. Uploading a day ahead spreads a week of posts over the week. When the limit still hits, the app tries again every 3 hours and only shows **Failed** when the publish time would pass first.
 
+## Changing a scheduled post
+
+Until a minute before its time, and as long as no part of it is live, a post on the Schedule page has **Edit** and **Add accounts**.
+
+- **Edit** changes the caption, the YouTube title, and the time. An account that was given its own caption keeps it. What happens on each platform depends on how far the post got there:
+  - Instagram has nothing until 15 minutes ahead. A container already made keeps its caption, so a new one is made.
+  - Facebook can't change a reel once it is scheduled there, so that reel is deleted and the video is sent again.
+  - YouTube changes the uploaded video in place, because uploading it again would count against the channel's daily upload limit.
+  - TikTok has nothing until the publish time. Once the video is in the inbox, only the caption behind **Copy caption** changes.
+- **Add accounts** sends the same video, caption, cover, and time to more connected accounts, with the same checks as a new post. An account canceled from the post can be added back. One that failed is retried with Retry instead.
+- **Cancel** beside one account takes only that account out of the post.
+
+If one platform refuses a change, the others keep it, the message names the one that didn't, and saving again only redoes that one.
+
 A post that is less than 2 hours late still goes out as soon as the app is back on. Beyond that it is marked **Missed** and waits for you to press **Publish now**, so content never goes out late without you knowing.
 
 Because Instagram depends on the app running, regular use calls for a server that stays on.

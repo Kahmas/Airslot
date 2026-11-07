@@ -109,5 +109,11 @@ export function createInstagram(config) {
 
     // Nothing to undo remotely: an unpublished container simply expires after 24 hours.
     async cancel() {},
+
+    // A container keeps the caption it was made with, so a changed post starts over with a new one.
+    async edit(target, account, ctx) {
+      if (target.status === 'waiting') return { next_run_at: ctx.now() };
+      return { status: 'waiting', stage: {}, next_run_at: ctx.now() };
+    },
   };
 }

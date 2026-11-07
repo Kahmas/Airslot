@@ -128,6 +128,28 @@ export function createYouTube(config) {
       }
     },
 
+    // An uploaded video is changed in place, because uploading it again would count against YouTube's daily limit.
+    async edit(target, account, ctx) {
+      const now = ctx.now();
+      if (target.status !== 'handed_off') return { status: 'waiting', stage: {}, next_run_at: now };
+      const headers = { Authorization: `Bearer ${await accessToken(account, ctx)}`, 'Content-Type': 'application/json; charset=UTF-8' };
+      const response = await send(`${apiUrl}/videos?part=snippet,status`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          id: target.remote_id,
+          snippet: { title: target.title, description: target.caption, categoryId: PEOPLE_AND_BLOGS },
+          status: {
+            privacyStatus: 'private',
+            publishAt: new Date(target.publish_at).toISOString(),
+            selfDeclaredMadeForKids: Boolean(target.made_for_kids),
+          },
+        }),
+      });
+      if (response.status !== 200) throw classify(response);
+      return { next_run_at: now };
+    },
+
     async cancel(target, account, ctx) {
       if (!target.remote_id) return;
       const headers = { Authorization: `Bearer ${await accessToken(account, ctx)}` };

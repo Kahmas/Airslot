@@ -631,6 +631,18 @@ details[open] summary { margin-bottom: 8px; }
 .pill-fail { background: var(--fail-bg); color: var(--fail); }
 .pill-off { background: transparent; color: var(--muted); text-decoration: line-through; }
 
+.slot-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.form-dialog { width: 100%; max-width: min(520px, calc(100vw - 32px)); }
+.form-dialog-fields { display: grid; gap: 16px; margin-top: 16px; }
+.form-dialog .field[hidden], .form-dialog .form-error[hidden] { display: none; }
+.form-dialog .form-error { margin-top: 14px; color: var(--fail); }
+.form-dialog-notes { margin: 0; padding-left: 18px; font-size: 0.8125rem; color: var(--muted); }
+.form-dialog-notes li + li { margin-top: 4px; }
+.add-options { display: grid; gap: 6px; }
+.add-option .check-row { gap: 12px; }
+.add-option .check-row.disabled { cursor: not-allowed; opacity: 0.6; }
+.add-note { margin: 2px 0 0 30px; font-size: 0.8125rem; }
+.form-dialog .note-error { color: var(--fail); }
 .slot-remove { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 10px; }
 .slot-expiry { order: 2; color: var(--muted); font-size: 0.8125rem; }
 .limit-field { margin-top: 14px; }

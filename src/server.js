@@ -9,6 +9,7 @@ import { registerCovers } from './covers.js';
 import { HttpError } from './http-error.js';
 import { accountLimitFor, storageLimitFor } from './limits.js';
 import { registerOAuth } from './oauth.js';
+import { AuthError } from './platforms/http.js';
 import { DAILY_LIMITS, SHARED_YOUTUBE_UPLOADS_PER_DAY } from './platforms/index.js';
 import { publicSite } from './site.js';
 import { ACTIVE_STATUSES, coverFile, videoFiles } from './store.js';
@@ -18,6 +19,9 @@ import { checkText, checkVideo } from './video-check.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DAY_MS = 24 * 3_600_000;
 const MIN_LEAD_MS = 60_000;
+// How long a post being changed is kept from the scheduler, in case the server stops in the middle.
+const EDIT_LEASE_MS = 10 * 60_000;
+const PLATFORM_NAMES = { instagram: 'Instagram', facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok' };
 
 function hostGuard(config) {
   return (req, res, next) => {
@@ -70,9 +74,16 @@ function targetView(target) {
     nextRunAt: target.next_run_at,
     remoteUrl: target.remote_url,
     coverNote: target.stage.coverNote ?? null,
+    accountId: target.account_id,
     // TikTok drafts arrive without a caption, so the schedule offers it for copying.
     ...(target.platform === 'tiktok' ? { caption: target.caption } : {}),
+    ...(target.platform === 'youtube' ? { title: target.title } : {}),
   };
+}
+
+// A post can change until its time is close or any part of it has gone live.
+function postIsEditable(post, targets, nowMs) {
+  return post.publish_at >= nowMs + MIN_LEAD_MS && !targets.some((target) => target.status === 'published');
 }
 
 export function createApp({ config, store, scheduler, platforms, now = Date.now }) {
@@ -194,6 +205,33 @@ export function createApp({ config, store, scheduler, platforms, now = Date.now 
     res.sendFile(video.file_name, { root: videosDir, cacheControl: false });
   });
 
+  // Checks one destination the way its platform would, so a post fails here rather than at its time.
+  function prepareTarget(user, checks, target, { caption, publishAt, excludePostId = null }) {
+    const account = store.getAccountFor(user.id, String(target?.accountId));
+    if (!account) throw new HttpError(422, 'One of the chosen accounts is no longer connected.');
+    if (account.needs_reconnect) throw new HttpError(422, `${account.name} needs to be reconnected first.`);
+    const check = checks[account.platform];
+    if (!check.ok) throw new HttpError(422, `${account.name}: ${check.issues.find((issue) => issue.level === 'error').text}`);
+    const text = {
+      caption: typeof target.caption === 'string' ? target.caption : caption,
+      title: typeof target.title === 'string' ? target.title.trim() : null,
+    };
+    const problem = checkText(account.platform, text);
+    if (problem) throw new HttpError(422, `${account.name}: ${problem}`);
+    const limit = DAILY_LIMITS[account.platform];
+    if (store.countNear(account.id, publishAt, DAY_MS, excludePostId) >= limit) {
+      throw new HttpError(422, `${account.name} has reached the limit of ${limit} posts per 24 hours around that time.`);
+    }
+    return { accountId: account.id, platform: account.platform, ...text, madeForKids: Boolean(target.madeForKids) };
+  }
+
+  function checkYouTubeAllowance(prepared) {
+    const youtubeUploads = prepared.filter((target) => target.platform === 'youtube').length;
+    if (youtubeUploads > 0 && store.countYouTubeUploadsSince(now() - DAY_MS) + youtubeUploads > SHARED_YOUTUBE_UPLOADS_PER_DAY) {
+      throw new HttpError(422, "This server has used up today's YouTube upload allowance, which everyone here shares. Try YouTube again tomorrow.");
+    }
+  }
+
   app.post('/api/posts', express.json({ limit: '1mb' }), (req, res) => {
     const { videoId, caption = '', publishNow = false, targets } = req.body ?? {};
     const publishAt = publishNow === true ? now() : req.body?.publishAt;
@@ -205,29 +243,8 @@ export function createApp({ config, store, scheduler, platforms, now = Date.now 
     if (!Array.isArray(targets) || targets.length === 0) throw new HttpError(422, 'Choose at least one account.');
 
     const checks = checkVideo(video.info);
-    const prepared = targets.map((target) => {
-      const account = store.getAccountFor(req.user.id, String(target?.accountId));
-      if (!account) throw new HttpError(422, 'One of the chosen accounts is no longer connected.');
-      if (account.needs_reconnect) throw new HttpError(422, `${account.name} needs to be reconnected first.`);
-      const check = checks[account.platform];
-      if (!check.ok) throw new HttpError(422, `${account.name}: ${check.issues.find((issue) => issue.level === 'error').text}`);
-      const text = {
-        caption: typeof target.caption === 'string' ? target.caption : caption,
-        title: typeof target.title === 'string' ? target.title.trim() : null,
-      };
-      const problem = checkText(account.platform, text);
-      if (problem) throw new HttpError(422, `${account.name}: ${problem}`);
-      const limit = DAILY_LIMITS[account.platform];
-      if (store.countNear(account.id, publishAt, DAY_MS) >= limit) {
-        throw new HttpError(422, `${account.name} has reached the limit of ${limit} posts per 24 hours around that time.`);
-      }
-      return { accountId: account.id, platform: account.platform, ...text, madeForKids: Boolean(target.madeForKids) };
-    });
-
-    const youtubeUploads = prepared.filter((target) => target.platform === 'youtube').length;
-    if (youtubeUploads > 0 && store.countYouTubeUploadsSince(now() - DAY_MS) + youtubeUploads > SHARED_YOUTUBE_UPLOADS_PER_DAY) {
-      throw new HttpError(422, "This server has used up today's YouTube upload allowance, which everyone here shares. Try YouTube again tomorrow.");
-    }
+    const prepared = targets.map((target) => prepareTarget(req.user, checks, target, { caption, publishAt }));
+    checkYouTubeAllowance(prepared);
 
     const postId = store.createPost({ userId: req.user.id, videoId: video.id, caption, publishAt, targets: prepared });
     scheduler.kick();
@@ -235,20 +252,127 @@ export function createApp({ config, store, scheduler, platforms, now = Date.now 
   });
 
   app.get('/api/posts', (req, res) => {
+    const nowMs = now();
     const posts = store.listPosts(req.user.id)
       .filter((post) => post.targets.length > 0)
-      .map((post) => ({
-        id: post.id,
-        caption: post.caption,
-        publishAt: post.publish_at,
-        video: {
-          originalName: post.original_name,
-          durationSec: JSON.parse(post.info).durationSec,
-          thumbUrl: post.has_thumb || post.has_cover ? `/api/videos/${post.video_id}/thumb` : null,
+      .map((post) => {
+        const info = JSON.parse(post.info);
+        const editable = postIsEditable(post, post.targets, nowMs);
+        return {
+          id: post.id,
+          caption: post.caption,
+          publishAt: post.publish_at,
+          editable,
+          video: {
+            originalName: post.original_name,
+            durationSec: info.durationSec,
+            thumbUrl: post.has_thumb || post.has_cover ? `/api/videos/${post.video_id}/thumb` : null,
+            // Only needed while accounts can still be added.
+            ...(editable ? { checks: checkVideo(info) } : {}),
+          },
+          targets: post.targets.map(targetView),
+        };
+      });
+    res.json({ posts, serverTime: nowMs });
+  });
+
+  function loadEditablePost(req) {
+    const post = store.getPostFor(req.user.id, req.params.id);
+    if (!post) throw new HttpError(404, 'Post not found.');
+    const targets = store.postTargetsFull(post.id);
+    if (targets.some((target) => target.status === 'published')) {
+      throw new HttpError(409, "Part of this post is already live, so it can't be changed. Make a new post instead.");
+    }
+    if (!postIsEditable(post, targets, now())) {
+      throw new HttpError(409, "It's too close to the publish time, or it has passed, so this post can't be changed. Make a new post instead.");
+    }
+    return { post, targets };
+  }
+
+  // Adds accounts to a post already on the schedule, with its video, caption, and time.
+  app.post('/api/posts/:id/targets', express.json({ limit: '1mb' }), (req, res) => {
+    const { post, targets: existing } = loadEditablePost(req);
+    const { targets } = req.body ?? {};
+    if (!Array.isArray(targets) || targets.length === 0) throw new HttpError(422, 'Choose at least one account.');
+    const checks = checkVideo(store.getVideoFor(req.user.id, post.video_id).info);
+    const chosen = new Set();
+    const prepared = targets.map((target) => {
+      const ready = prepareTarget(req.user, checks, target, { caption: post.caption, publishAt: post.publish_at });
+      if (chosen.has(ready.accountId)) throw new HttpError(422, 'An account is chosen twice.');
+      chosen.add(ready.accountId);
+      const already = existing.find((row) => row.account_id === ready.accountId && row.status !== 'canceled');
+      if (already) {
+        const hint = already.status === 'failed' || already.status === 'missed' ? ' Use Retry on it instead.' : '';
+        throw new HttpError(409, `${already.account_name} is already in this post.${hint}`);
+      }
+      return ready;
+    });
+    checkYouTubeAllowance(prepared);
+    store.addTargets(post.id, prepared);
+    scheduler.kick();
+    res.status(201).json({ added: prepared.length });
+  });
+
+  // Changes the caption, the YouTube title, or the time. A destination with its own caption keeps it.
+  app.patch('/api/posts/:id', express.json({ limit: '1mb' }), async (req, res) => {
+    const { post, targets } = loadEditablePost(req);
+    const body = req.body ?? {};
+    const caption = body.caption ?? post.caption;
+    const publishAt = body.publishAt ?? post.publish_at;
+    const title = body.title == null ? null : String(body.title).trim();
+    if (typeof caption !== 'string') throw new HttpError(422, 'The caption is not valid.');
+    if (!Number.isFinite(publishAt)) throw new HttpError(422, 'The publish time is not valid.');
+    const moved = publishAt !== post.publish_at;
+    if (moved && publishAt < now() + MIN_LEAD_MS) throw new HttpError(422, 'The publish time must be at least 1 minute from now.');
+
+    const changes = targets
+      .filter((target) => target.status !== 'canceled')
+      .map((target) => ({
+        target,
+        next: {
+          caption: target.caption === post.caption ? caption : target.caption,
+          title: target.platform === 'youtube' && title != null ? title : target.title,
+          publish_at: moved ? publishAt : target.publish_at,
         },
-        targets: post.targets.map(targetView),
-      }));
-    res.json({ posts, serverTime: now() });
+      }))
+      .filter(({ target, next }) => next.caption !== target.caption || next.title !== target.title || next.publish_at !== target.publish_at);
+
+    for (const { target, next } of changes) {
+      const problem = checkText(target.platform, next);
+      if (problem) throw new HttpError(422, `${target.account_name}: ${problem}`);
+      const limit = DAILY_LIMITS[target.platform];
+      if (moved && ACTIVE_STATUSES.includes(target.status) && store.countNear(target.account_id, publishAt, DAY_MS, post.id) >= limit) {
+        throw new HttpError(422, `${target.account_name} has reached the limit of ${limit} posts per 24 hours around that time.`);
+      }
+    }
+    const live = changes.filter(({ target }) => ACTIVE_STATUSES.includes(target.status));
+    if (live.some(({ target }) => scheduler.isBusy(target.id))) throw new HttpError(409, 'The video is being processed. Try again in a moment.');
+    // Nothing in between awaits, so the scheduler can't pick these up while the platforms are being told.
+    for (const { target } of live) store.patchTarget(target.id, { next_run_at: now() + EDIT_LEASE_MS });
+
+    const failures = [];
+    for (const { target, next } of changes) {
+      if (!ACTIVE_STATUSES.includes(target.status)) {
+        store.patchTarget(target.id, next);
+        continue;
+      }
+      const account = store.getAccount(target.account_id);
+      try {
+        const patch = await platforms[target.platform].edit({ ...target, ...next }, account, scheduler.context);
+        store.patchTarget(target.id, { ...next, error: null, attempts: 0, ...patch, next_run_at: patch.next_run_at ?? now() });
+      } catch (err) {
+        store.patchTarget(target.id, { next_run_at: now() });
+        if (err instanceof AuthError) store.markNeedsReconnect(account.id);
+        const reason = err instanceof AuthError ? 'its access has expired, so reconnect it on the Accounts page.' : err.message;
+        failures.push(`${PLATFORM_NAMES[target.platform]} ${target.account_name} kept the old version: ${reason}`);
+        console.error(`[edit ${target.platform}] ${target.id}: ${err.message}${err.detail ? ` (${err.detail})` : ''}`);
+      }
+    }
+    scheduler.kick();
+    // The post keeps its old values until every destination took the new ones, so saving again only redoes the rest.
+    if (failures.length > 0) throw new HttpError(502, `Not everything changed. ${failures.join(' ')} Save again to try once more.`);
+    store.updatePost(post.id, { caption, publishAt });
+    res.json({ ok: true });
   });
 
   app.delete('/api/posts/:id', (req, res) => {

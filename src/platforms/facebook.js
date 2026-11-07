@@ -111,5 +111,13 @@ export function createFacebook(config) {
     async cancel(target, account) {
       if (target.stage.videoId) await graph.del(`/${target.stage.videoId}`, account.token);
     },
+
+    // Until the finish call, Facebook has only the file, which keeps. After it, the reel is scheduled
+    // with the old caption and time, so it is deleted there and sent again.
+    async edit(target, account, ctx) {
+      if (target.status !== 'handed_off') return { next_run_at: ctx.now() };
+      await this.cancel(target, account);
+      return { status: 'waiting', stage: {}, remote_id: null, next_run_at: ctx.now() };
+    },
   };
 }

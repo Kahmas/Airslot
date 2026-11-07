@@ -290,6 +290,26 @@ export async function startMockPlatforms({ now = Date.now, processingPolls = 1 }
       const id = url.searchParams.get('id');
       return send(res, 200, { items: state.videos.has(id) ? [youTubeVideo(id)] : [] });
     }
+    if (pathname === '/youtube/v3/videos' && req.method === 'PUT') {
+      if (url.searchParams.get('part') !== 'snippet,status') return send(res, 400, { error: { code: 400, message: 'part must be snippet,status' } });
+      const meta = JSON.parse(body.toString());
+      const video = state.videos.get(meta.id);
+      if (!video) return send(res, 404, { error: { code: 404, message: 'Video not found', errors: [{ reason: 'videoNotFound' }] } });
+      // Updating the snippet replaces it, and YouTube requires the category with it.
+      if (!meta.snippet?.title || !meta.snippet?.categoryId) return send(res, 400, { error: { code: 400, message: 'title and categoryId are required', errors: [{ reason: 'invalidRequest' }] } });
+      if (meta.status.publishAt && meta.status.privacyStatus !== 'private') {
+        return send(res, 400, { error: { code: 400, message: 'publishAt requires private', errors: [{ reason: 'invalidPublishAt' }] } });
+      }
+      Object.assign(video, {
+        title: meta.snippet.title,
+        description: meta.snippet.description,
+        privacy: meta.status.privacyStatus,
+        publishAt: meta.status.publishAt ? Date.parse(meta.status.publishAt) : null,
+        madeForKids: meta.status.selfDeclaredMadeForKids,
+      });
+      state.youtubeUpdates = (state.youtubeUpdates ?? 0) + 1;
+      return send(res, 200, youTubeVideo(meta.id));
+    }
     if (pathname === '/youtube/v3/videos' && req.method === 'DELETE') {
       const id = url.searchParams.get('id');
       state.deleted.push(id);
